@@ -213,6 +213,58 @@ dependencies:
   condition: "DATE(last_updated) = CURRENT_DATE()"
   fail_open: true
 
+# Reconciliation Configuration
+reconciliation:
+  # Tables to reconcile - specific per domain/table
+  tables:
+  - table_name: raw_a1
+    s3_path: "${DOMAIN}/raw_a1"
+    key_columns: [ "member_id" ]
+    comparison_columns: [ "member_name", "member_status", "created_date" ]
+    schedule: "@daily"
+    enabled: true
+  - table_name: refined_b1
+    s3_path: "${DOMAIN}/refined_b1"
+    key_columns: [ "member_id" ]
+    comparison_columns: [ "member_name", "member_status", "email", "phone" ]
+    schedule: "@daily"
+    enabled: true
+
+  # S3 source configuration
+  s3_source:
+    path_pattern: "${DOMAIN}/{table_name}/dt={{{{ ds }}}}"
+    file_format: "PARQUET"
+    file_pattern: "*.parquet"
+
+  # Temporary storage for reconciliation data
+  temp_storage:
+    gcs_bucket: "${DOMAIN}-reconcile-temp"
+    dataset: "${DOMAIN}_reconcile_temp"
+    external_table_suffix: "_external"
+    ttl_days: 7 # Auto-cleanup temp data
+
+  # Comparison settings
+  comparison:
+    tolerance:
+      numeric_fields: 0.01 # 1% tolerance for numeric comparisons
+      date_fields: "1 MINUTE" # 1 minute tolerance for timestamps
+    mismatch_threshold_percent: 5 # Alert if >5% mismatches
+
+  # Results storage
+  results:
+    dataset: "${DOMAIN}_audit"
+    table: "reconciliation_results"
+    stats_table: "reconciliation_stats"
+    partition_field: "reconciliation_date"
+
+  # Dataflow job configuration for reconciliation processing
+  dataflow:
+    template_path: "gs://dataflow-templates/reconciliation_pipeline.json"
+    machine_type: "n2-standard-4"
+    max_workers: 10
+    temp_location: "gs://dataflow-temp/${DOMAIN}/reconciliation"
+    staging_location: "gs://dataflow-staging/${DOMAIN}/reconciliation"
+
 # Aggregation Configuration
 aggregation:
   enabled: true
