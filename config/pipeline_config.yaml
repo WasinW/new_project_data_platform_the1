@@ -1,0 +1,248 @@
+# config/pipeline_config.yaml
+project: ${GCP_PROJECT_ID:your-gcp-project-id}
+region: ${GCP_REGION:asia-southeast1}
+domain: ${DOMAIN:member}
+environment: ${ENVIRONMENT:dev}
+version: "1.0.0"
+
+# Source Configuration
+source:
+  project: ${SOURCE_PROJECT_ID:source-project-id}
+  dataset: ${SOURCE_DATASET:refined_data}
+  table: ${SOURCE_TABLE:personas}
+
+# Target Datasets
+target_datasets:
+  raw: ${DOMAIN}_raw
+  structure: ${DOMAIN}_structure
+  refined: ${DOMAIN}_refined
+  analytics: ${DOMAIN}_analytics
+
+# Pub/Sub Configuration (for realtime mode)
+pubsub:
+  subscription: projects/${GCP_PROJECT_ID}/subscriptions/${DOMAIN}-events-sub
+  create_subscription: projects/${GCP_PROJECT_ID}/topics/${DOMAIN}-events-create
+  update_subscription: projects/${GCP_PROJECT_ID}/topics/${DOMAIN}-events-update
+
+# Distribution Mapping - defines which columns go to which tables
+distribution_mapping:
+  raw_a1: [a, b, c]
+  raw_a2: [a, e, f]
+  raw_a3: [a, e, g]
+  refined_b1: [a, b, c, d, e, f]
+  refined_b2: [a, b, c, d]
+  refined_c1: [a, b, c, d, e, f, g]
+
+# Column Mappings - how to transform column names and values
+column_mappings:
+  raw_a1:
+    member_id: a
+    member_name: b
+    member_status: c
+    created_timestamp: 
+      type: constant
+      value: "{{ current_timestamp }}"
+  
+  raw_a2:
+    member_id: a
+    email: e
+    phone: f
+    contact_preference:
+      type: expression
+      expression: "'email' if element.get('e') else 'phone'"
+  
+  raw_a3:
+    member_id: a
+    email: e
+    address: g
+    full_contact:
+      type: concat
+      columns: [e, g]
+      separator: " | "
+  
+  refined_b1:
+    member_id: a
+    member_name: b
+    member_status: c
+    created_date: d
+    email: e
+    phone: f
+    last_updated:
+      type: constant
+      value: "{{ processing_timestamp }}"
+  
+  refined_b2:
+    member_id: a
+    member_name: b
+    member_status: c
+    created_date: d
+    member_key:
+      type: concat
+      columns: [a, b]
+      separator: "_"
+    default_score:
+      type: constant
+      value: 0
+    status_code:
+      type: expression
+      expression: "1 if element.get('c') == 'active' else 0"
+  
+  refined_c1:
+    member_id: a
+    member_name: b
+    member_status: c
+    created_date: d
+    email: e
+    phone: f
+    address: g
+    record_hash:
+      type: expression
+      expression: "hashlib.md5(str(element).encode()).hexdigest()"
+
+# Complex Transformations - for advanced business logic
+complex_transforms:
+  refined_b1:
+    module: transforms.member.MemberProfileEnrichment
+    params:
+      lookup_table: ${GCP_PROJECT_ID}.reference_data.member_segments
+      join_key: member_id
+      cache_duration_minutes: 30
+      enrichment_fields: [segment, tier, region, signup_source]
+  
+  refined_c1:
+    module: transforms.member.AddressStandardization
+    params:
+      address_validation_api: ${ADDRESS_API_ENDPOINT}
+      standardization_level: strict
+      country_code: TH
+  
+  analytics_summary:
+    module: transforms.analytics.MemberAggregation
+    params:
+      group_by: [region, segment]
+      metrics: [total_value, transaction_count, avg_score]
+      aggregation_window_days: 30
+
+# Data Validation Rules
+data_validation:
+  enabled: true
+  rules:
+    - name: member_id_required
+      type: required
+      field: member_id
+    - name: email_format
+      type: pattern
+      field: email
+      pattern: "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$"
+    - name: phone_length
+      type: length
+      field: phone
+      min: 10
+      max: 15
+    - name: member_name_not_empty
+      type: not_empty
+      field: member_name
+  
+  quality_checks:
+    - name: email_completeness
+      type: completeness
+      field: email
+      penalty: 10
+    - name: phone_format_consistency
+      type: format_consistency
+      field: phone
+      pattern: "^[0-9+-]+$"
+      penalty: 5
+    - name: transaction_value_outliers
+      type: outlier_detection
+      field: transaction_value
+      min_expected: 0
+      max_expected: 1000000
+      penalty: 15
+  
+  min_quality_score: 70
+  max_failed_rules: 2
+
+# Dependencies - upstream systems that must be ready
+dependencies:
+  - name: daily_etl_completion
+    project: ${GCP_PROJECT_ID}
+    dataset: batch_control
+    table: job_status
+    condition: "job_name = 'daily_etl' AND status = 'COMPLETED' AND DATE(completion_time) = CURRENT_DATE()"
+    fail_open: false
+  
+  - name: reference_data_available
+    project: ${GCP_PROJECT_ID}
+    dataset: reference_data
+    table: member_segments
+    condition: "DATE(last_updated) = CURRENT_DATE()"
+    fail_open: true
+
+# Aggregation Configuration
+aggregation:
+  enabled: true
+  tables: [refined_b1, refined_c1]
+  group_by_fields: [member_id, region]
+  metrics:
+    - name: total_transactions
+      type: count
+    - name: total_value
+      type: sum
+      field: transaction_value
+    - name: avg_score
+      type: avg
+      field: member_score
+
+# Error Handling and Dead Letter Queues
+error_handling:
+  failed_dependencies_table: ${GCP_PROJECT_ID}.${DOMAIN}_audit.failed_dependencies
+  fetch_errors_table: ${GCP_PROJECT_ID}.${DOMAIN}_audit.fetch_errors
+  transform_errors_table: ${GCP_PROJECT_ID}.${DOMAIN}_audit.transform_errors
+  validation_errors_table: ${GCP_PROJECT_ID}.${DOMAIN}_audit.validation_errors
+  max_retries: 3
+  retry_delay_seconds: 60
+
+# Audit and Monitoring
+audit:
+  enabled: true
+  processing_logs_table: ${GCP_PROJECT_ID}.${DOMAIN}_audit.processing_logs
+  data_lineage_table: ${GCP_PROJECT_ID}.${DOMAIN}_audit.data_lineage
+  metrics_table: ${GCP_PROJECT_ID}.${DOMAIN}_audit.processing_metrics
+  quality_logs_table: ${GCP_PROJECT_ID}.${DOMAIN}_audit.data_quality_logs
+  batch_size: 100
+  flush_interval_seconds: 300
+
+# Performance Settings
+performance:
+  batch_size: 500
+  max_workers: 20
+  machine_type: n2-standard-4
+  disk_size_gb: 100
+  write_batch_size: 1000
+  triggering_frequency_seconds: 30
+
+# Environment-specific overrides
+environments:
+  dev:
+    performance:
+      max_workers: 5
+      machine_type: n2-standard-2
+    audit:
+      batch_size: 10
+  
+  staging:
+    performance:
+      max_workers: 10
+      machine_type: n2-standard-4
+    data_validation:
+      min_quality_score: 60
+  
+  prod:
+    performance:
+      max_workers: 50
+      machine_type: n2-standard-8
+    data_validation:
+      min_quality_score: 85
+    error_handling:
+      max_retries: 5

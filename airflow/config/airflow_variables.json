@@ -1,0 +1,72 @@
+{
+  "gcp_project_id": "your-gcp-project-id",
+  "gcp_region": "asia-southeast1",
+  "gcp_zone": "asia-southeast1-a",
+  
+  "s3_bucket": "your-aws-s3-bucket",
+  "aws_access_key_id": "your-aws-access-key",
+  "aws_secret_access_key": "your-aws-secret-key",
+  
+  "dataflow_network": "projects/your-gcp-project-id/global/networks/default",
+  "dataflow_subnetwork": "projects/your-gcp-project-id/regions/asia-southeast1/subnetworks/default",
+  "dataflow_service_account": "dataflow-sa@your-gcp-project-id.iam.gserviceaccount.com",
+  
+  "domains_config": {
+    "member": {
+      "tables": ["s_loy_program", "s_org_ext", "s_loy_tier", "s_loy_member"],
+      "enabled": true,
+      "config_path": "gs://pipeline-configs/member/config.yaml"
+    },
+    "order": {
+      "tables": ["order_header", "order_detail", "payment"],
+      "enabled": true,
+      "config_path": "gs://pipeline-configs/order/config.yaml"
+    },
+    "product": {
+      "tables": ["product_master", "product_category", "inventory"],
+      "enabled": false,
+      "config_path": "gs://pipeline-configs/product/config.yaml"
+    }
+  },
+  
+  "batch_domains": ["member", "order"],
+  
+  "pipeline_environments": {
+    "dev": {
+      "max_workers": 5,
+      "machine_type": "n2-standard-2"
+    },
+    "staging": {
+      "max_workers": 10,
+      "machine_type": "n2-standard-4"
+    },
+    "prod": {
+      "max_workers": 50,
+      "machine_type": "n2-standard-8"
+    }
+  },
+  
+  "monitoring": {
+    "enable_alerts": true,
+    "slack_webhook": "https://hooks.slack.com/services/your/slack/webhook",
+    "email_recipients": ["data-team@company.com", "ops-team@company.com"],
+    "alert_thresholds": {
+      "error_rate_percent": 5,
+      "latency_minutes": 30,
+      "data_quality_score": 70
+    }
+  },
+  
+  "storage_config": {
+    "temp_location": "gs://dataflow-temp",
+    "staging_location": "gs://dataflow-staging",
+    "config_bucket": "pipeline-configs",
+    "template_bucket": "dataflow-templates"
+  },
+  
+  "security": {
+    "kms_key_name": "projects/your-gcp-project-id/locations/asia-southeast1/keyRings/dataflow-ring/cryptoKeys/dataflow-key",
+    "vpc_network": "projects/your-gcp-project-id/global/networks/vpc-network",
+    "private_google_access": true
+  }
+}
