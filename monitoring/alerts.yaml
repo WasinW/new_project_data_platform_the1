@@ -1,236 +1,236 @@
 # monitoring/alerts.yaml
 alerts:
-  - name: pipeline_failure
-    description: "Alert when any pipeline fails"
-    query: |
-      SELECT COUNT(*) as failure_count
-      FROM `${PROJECT_ID}.${DOMAIN}_audit.processing_logs`
-      WHERE status = 'FAILED'
-        AND timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 1 HOUR)
-    threshold: 0
-    comparison: "GREATER_THAN"
-    notification_channels: 
-      - email
-      - slack
-    severity: "CRITICAL"
-  
-  # Windowing-specific alerts
-  - name: window_high_latency
-    description: "Alert when window processing latency exceeds threshold"
-    query: |
-      SELECT COUNT(*) as high_latency_windows
-      FROM `${PROJECT_ID}.${DOMAIN}_audit.windowing_alerts`
-      WHERE alert_level IN ('HIGH_LATENCY', 'MODERATE_LATENCY')
-        AND generated_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 15 MINUTE)
-    threshold: 5
-    comparison: "GREATER_THAN"
-    notification_channels: 
-      - email
-      - slack
-    severity: "WARNING"
-    
-  - name: empty_windows
-    description: "Alert when multiple windows process zero records"
-    query: |
-      SELECT COUNT(*) as empty_windows
-      FROM `${PROJECT_ID}.${DOMAIN}_audit.windowing_alerts`
-      WHERE alert_level = 'EMPTY_WINDOW'
-        AND generated_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 MINUTE)
-    threshold: 10
-    comparison: "GREATER_THAN"
-    notification_channels: 
-      - email
-      - slack
-    severity: "WARNING"
-    
-  - name: window_processing_stopped
-    description: "Alert when no windows are processed for extended period"
-    query: |
-      SELECT TIMESTAMP_DIFF(
-        CURRENT_TIMESTAMP(),
-        MAX(PARSE_TIMESTAMP('%Y-%m-%dT%H:%M:%S', audit_timestamp)),
-        MINUTE
-      ) as minutes_since_last_window
-      FROM `${PROJECT_ID}.${DOMAIN}_audit.window_summaries`
-      WHERE pipeline_mode = 'realtime'
-    threshold: 20
-    comparison: "GREATER_THAN"
-    notification_channels: 
-      - pagerduty
-      - slack
-    severity: "CRITICAL"
+- name: pipeline_failure
+  description: "Alert when any pipeline fails"
+  query: |
+    SELECT COUNT(*) as failure_count
+    FROM `${PROJECT_ID}.${DOMAIN}_audit.processing_logs`
+    WHERE status = 'FAILED'
+      AND timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 1 HOUR)
+  threshold: 0
+  comparison: "GREATER_THAN"
+  notification_channels:
+  - email
+  - slack
+  severity: "CRITICAL"
 
-  - name: window_throughput_drop
-    description: "Alert when window throughput drops significantly"
-    query: |
-      WITH current_hour AS (
-        SELECT SUM(record_count) as current_records
-        FROM `${PROJECT_ID}.${DOMAIN}_audit.window_summaries`
-        WHERE PARSE_TIMESTAMP('%Y-%m-%dT%H:%M:%S', audit_timestamp) >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 1 HOUR)
-          AND pipeline_mode = 'realtime'
-      ), previous_hour AS (
-        SELECT SUM(record_count) as previous_records
-        FROM `${PROJECT_ID}.${DOMAIN}_audit.window_summaries`
-        WHERE PARSE_TIMESTAMP('%Y-%m-%dT%H:%M:%S', audit_timestamp) >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 2 HOUR)
-          AND PARSE_TIMESTAMP('%Y-%m-%dT%H:%M:%S', audit_timestamp) < TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 1 HOUR)
-          AND pipeline_mode = 'realtime'
-      )
-      SELECT 
-        CASE 
-          WHEN p.previous_records > 0 THEN
-            SAFE_DIVIDE(ABS(c.current_records - p.previous_records), p.previous_records) * 100
-          ELSE 0
-        END as throughput_change_percentage
-      FROM current_hour c
-      CROSS JOIN previous_hour p
-    threshold: 50
-    comparison: "GREATER_THAN"
-    notification_channels: 
-      - email
-      - slack
-    severity: "WARNING"
-  
-  - name: reconciliation_mismatch_high
-    description: "Alert when reconciliation mismatch rate is high"
-    query: |
-      SELECT 
-        SUM(CASE WHEN status != 'MATCH' THEN 1 ELSE 0 END) * 100.0 / COUNT(*) as mismatch_percentage
-      FROM `${PROJECT_ID}.${DOMAIN}_audit.reconciliation_results`
-      WHERE DATE(reconciliation_timestamp) = CURRENT_DATE()
-    threshold: 5.0
-    comparison: "GREATER_THAN"
-    notification_channels: 
-      - email
-    severity: "WARNING"
-  
-  - name: dataflow_job_stuck
-    description: "Alert when Dataflow job is running too long"
-    query: |
-      SELECT COUNT(*) as stuck_jobs
-      FROM `${PROJECT_ID}.dataflow.jobs`
-      WHERE state = 'RUNNING'
-        AND start_time < TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 2 HOUR)
-    threshold: 0
-    comparison: "GREATER_THAN"
-    notification_channels: 
-      - pagerduty
-      - slack
-    severity: "CRITICAL"
-  
-  - name: data_quality_degradation
-    description: "Alert when data quality score drops"
-    query: |
-      SELECT AVG(quality_score) as avg_quality_score
-      FROM `${PROJECT_ID}.${DOMAIN}_audit.data_quality_logs`
-      WHERE DATE(timestamp) = CURRENT_DATE()
-    threshold: 70
-    comparison: "LESS_THAN"
-    notification_channels: 
-      - email
-    severity: "WARNING"
-  
-  - name: high_error_rate
-    description: "Alert when error rate is high"
-    query: |
-      SELECT 
-        SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END) * 100.0 / COUNT(*) as error_rate
-      FROM `${PROJECT_ID}.${DOMAIN}_audit.processing_logs`
-      WHERE timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 1 HOUR)
-    threshold: 5.0
-    comparison: "GREATER_THAN"
-    notification_channels: 
-      - email
-      - slack
-    severity: "WARNING"
+# Windowing-specific alerts
+- name: window_high_latency
+  description: "Alert when window processing latency exceeds threshold"
+  query: |
+    SELECT COUNT(*) as high_latency_windows
+    FROM `${PROJECT_ID}.${DOMAIN}_audit.windowing_alerts`
+    WHERE alert_level IN ('HIGH_LATENCY', 'MODERATE_LATENCY')
+      AND generated_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 15 MINUTE)
+  threshold: 5
+  comparison: "GREATER_THAN"
+  notification_channels:
+  - email
+  - slack
+  severity: "WARNING"
+
+- name: empty_windows
+  description: "Alert when multiple windows process zero records"
+  query: |
+    SELECT COUNT(*) as empty_windows
+    FROM `${PROJECT_ID}.${DOMAIN}_audit.windowing_alerts`
+    WHERE alert_level = 'EMPTY_WINDOW'
+      AND generated_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 MINUTE)
+  threshold: 10
+  comparison: "GREATER_THAN"
+  notification_channels:
+  - email
+  - slack
+  severity: "WARNING"
+
+- name: window_processing_stopped
+  description: "Alert when no windows are processed for extended period"
+  query: |
+    SELECT TIMESTAMP_DIFF(
+      CURRENT_TIMESTAMP(),
+      MAX(PARSE_TIMESTAMP('%Y-%m-%dT%H:%M:%S', audit_timestamp)),
+      MINUTE
+    ) as minutes_since_last_window
+    FROM `${PROJECT_ID}.${DOMAIN}_audit.window_summaries`
+    WHERE pipeline_mode = 'realtime'
+  threshold: 20
+  comparison: "GREATER_THAN"
+  notification_channels:
+  - pagerduty
+  - slack
+  severity: "CRITICAL"
+
+- name: window_throughput_drop
+  description: "Alert when window throughput drops significantly"
+  query: |
+    WITH current_hour AS (
+      SELECT SUM(record_count) as current_records
+      FROM `${PROJECT_ID}.${DOMAIN}_audit.window_summaries`
+      WHERE PARSE_TIMESTAMP('%Y-%m-%dT%H:%M:%S', audit_timestamp) >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 1 HOUR)
+        AND pipeline_mode = 'realtime'
+    ), previous_hour AS (
+      SELECT SUM(record_count) as previous_records
+      FROM `${PROJECT_ID}.${DOMAIN}_audit.window_summaries`
+      WHERE PARSE_TIMESTAMP('%Y-%m-%dT%H:%M:%S', audit_timestamp) >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 2 HOUR)
+        AND PARSE_TIMESTAMP('%Y-%m-%dT%H:%M:%S', audit_timestamp) < TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 1 HOUR)
+        AND pipeline_mode = 'realtime'
+    )
+    SELECT 
+      CASE 
+        WHEN p.previous_records > 0 THEN
+          SAFE_DIVIDE(ABS(c.current_records - p.previous_records), p.previous_records) * 100
+        ELSE 0
+      END as throughput_change_percentage
+    FROM current_hour c
+    CROSS JOIN previous_hour p
+  threshold: 50
+  comparison: "GREATER_THAN"
+  notification_channels:
+  - email
+  - slack
+  severity: "WARNING"
+
+- name: reconciliation_mismatch_high
+  description: "Alert when reconciliation mismatch rate is high"
+  query: |
+    SELECT 
+      SUM(CASE WHEN status != 'MATCH' THEN 1 ELSE 0 END) * 100.0 / COUNT(*) as mismatch_percentage
+    FROM `${PROJECT_ID}.${DOMAIN}_audit.reconciliation_results`
+    WHERE DATE(reconciliation_timestamp) = CURRENT_DATE()
+  threshold: 5.0
+  comparison: "GREATER_THAN"
+  notification_channels:
+  - email
+  severity: "WARNING"
+
+- name: dataflow_job_stuck
+  description: "Alert when Dataflow job is running too long"
+  query: |
+    SELECT COUNT(*) as stuck_jobs
+    FROM `${PROJECT_ID}.dataflow.jobs`
+    WHERE state = 'RUNNING'
+      AND start_time < TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 2 HOUR)
+  threshold: 0
+  comparison: "GREATER_THAN"
+  notification_channels:
+  - pagerduty
+  - slack
+  severity: "CRITICAL"
+
+- name: data_quality_degradation
+  description: "Alert when data quality score drops"
+  query: |
+    SELECT AVG(quality_score) as avg_quality_score
+    FROM `${PROJECT_ID}.${DOMAIN}_audit.data_quality_logs`
+    WHERE DATE(timestamp) = CURRENT_DATE()
+  threshold: 70
+  comparison: "LESS_THAN"
+  notification_channels:
+  - email
+  severity: "WARNING"
+
+- name: high_error_rate
+  description: "Alert when error rate is high"
+  query: |
+    SELECT 
+      SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END) * 100.0 / COUNT(*) as error_rate
+    FROM `${PROJECT_ID}.${DOMAIN}_audit.processing_logs`
+    WHERE timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 1 HOUR)
+  threshold: 5.0
+  comparison: "GREATER_THAN"
+  notification_channels:
+  - email
+  - slack
+  severity: "WARNING"
 
 notification_channels:
   email:
     type: "email"
     configuration:
-      recipients: 
-        - "data-team@company.com"
-        - "ops-team@company.com"
-  
+      recipients:
+      - "data-team@company.com"
+      - "ops-team@company.com"
+
   slack:
     type: "slack"
     configuration:
       webhook_url: "${SLACK_WEBHOOK_URL}"
       channel: "#data-alerts"
-  
+
   pagerduty:
-    type: "pagerduty" 
+    type: "pagerduty"
     configuration:
       integration_key: "${PAGERDUTY_INTEGRATION_KEY}"
 
 dashboards:
-  - name: "Pipeline Health Dashboard"
-    description: "Overview of all pipeline health metrics"
-    panels:
-      - title: "Pipeline Success Rate"
-        type: "line_chart"
-        query: |
-          SELECT 
-            TIMESTAMP_TRUNC(timestamp, HOUR) as hour,
-            SUM(CASE WHEN status = 'SUCCESS' THEN 1 ELSE 0 END) * 100.0 / COUNT(*) as success_rate
-          FROM `${PROJECT_ID}.${DOMAIN}_audit.processing_logs`
-          WHERE timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR)
-          GROUP BY hour
-          ORDER BY hour
-      
-      - title: "Data Volume by Hour"
-        type: "bar_chart"
-        query: |
-          SELECT 
-            TIMESTAMP_TRUNC(timestamp, HOUR) as hour,
-            COUNT(*) as record_count
-          FROM `${PROJECT_ID}.${DOMAIN}_audit.processing_logs`
-          WHERE timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR)
-          GROUP BY hour
-          ORDER BY hour
-      
-      - title: "Error Distribution"
-        type: "pie_chart"
-        query: |
-          SELECT 
-            COALESCE(error_type, 'SUCCESS') as error_type,
-            COUNT(*) as count
-          FROM `${PROJECT_ID}.${DOMAIN}_audit.processing_logs`
-          WHERE timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR)
-          GROUP BY error_type
-      
-      - title: "Data Quality Score Trend"
-        type: "line_chart"
-        query: |
-          SELECT 
-            TIMESTAMP_TRUNC(timestamp, HOUR) as hour,
-            AVG(quality_score) as avg_quality_score
-          FROM `${PROJECT_ID}.${DOMAIN}_audit.data_quality_logs`
-          WHERE timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR)
-          GROUP BY hour
-          ORDER BY hour
+- name: "Pipeline Health Dashboard"
+  description: "Overview of all pipeline health metrics"
+  panels:
+  - title: "Pipeline Success Rate"
+    type: "line_chart"
+    query: |
+      SELECT 
+        TIMESTAMP_TRUNC(timestamp, HOUR) as hour,
+        SUM(CASE WHEN status = 'SUCCESS' THEN 1 ELSE 0 END) * 100.0 / COUNT(*) as success_rate
+      FROM `${PROJECT_ID}.${DOMAIN}_audit.processing_logs`
+      WHERE timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR)
+      GROUP BY hour
+      ORDER BY hour
 
-  - name: "Reconciliation Dashboard"
-    description: "Data reconciliation metrics and trends"
-    panels:
-      - title: "Daily Reconciliation Status"
-        type: "stacked_bar_chart"
-        query: |
-          SELECT 
-            DATE(reconciliation_timestamp) as date,
-            status,
-            COUNT(*) as record_count
-          FROM `${PROJECT_ID}.${DOMAIN}_audit.reconciliation_results`
-          WHERE DATE(reconciliation_timestamp) >= DATE_SUB(CURRENT_DATE(), INTERVAL 7)
-          GROUP BY date, status
-          ORDER BY date DESC
-      
-      - title: "Mismatch Trend"
-        type: "line_chart"
-        query: |
-          SELECT 
-            DATE(reconciliation_timestamp) as date,
-            SUM(CASE WHEN status = 'MISMATCH' THEN 1 ELSE 0 END) * 100.0 / COUNT(*) as mismatch_percentage
-          FROM `${PROJECT_ID}.${DOMAIN}_audit.reconciliation_results`
-          WHERE DATE(reconciliation_timestamp) >= DATE_SUB(CURRENT_DATE(), INTERVAL 30)
-          GROUP BY date
-          ORDER BY date
+  - title: "Data Volume by Hour"
+    type: "bar_chart"
+    query: |
+      SELECT 
+        TIMESTAMP_TRUNC(timestamp, HOUR) as hour,
+        COUNT(*) as record_count
+      FROM `${PROJECT_ID}.${DOMAIN}_audit.processing_logs`
+      WHERE timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR)
+      GROUP BY hour
+      ORDER BY hour
+
+  - title: "Error Distribution"
+    type: "pie_chart"
+    query: |
+      SELECT 
+        COALESCE(error_type, 'SUCCESS') as error_type,
+        COUNT(*) as count
+      FROM `${PROJECT_ID}.${DOMAIN}_audit.processing_logs`
+      WHERE timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR)
+      GROUP BY error_type
+
+  - title: "Data Quality Score Trend"
+    type: "line_chart"
+    query: |
+      SELECT 
+        TIMESTAMP_TRUNC(timestamp, HOUR) as hour,
+        AVG(quality_score) as avg_quality_score
+      FROM `${PROJECT_ID}.${DOMAIN}_audit.data_quality_logs`
+      WHERE timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR)
+      GROUP BY hour
+      ORDER BY hour
+
+- name: "Reconciliation Dashboard"
+  description: "Data reconciliation metrics and trends"
+  panels:
+  - title: "Daily Reconciliation Status"
+    type: "stacked_bar_chart"
+    query: |
+      SELECT 
+        DATE(reconciliation_timestamp) as date,
+        status,
+        COUNT(*) as record_count
+      FROM `${PROJECT_ID}.${DOMAIN}_audit.reconciliation_results`
+      WHERE DATE(reconciliation_timestamp) >= DATE_SUB(CURRENT_DATE(), INTERVAL 7)
+      GROUP BY date, status
+      ORDER BY date DESC
+
+  - title: "Mismatch Trend"
+    type: "line_chart"
+    query: |
+      SELECT 
+        DATE(reconciliation_timestamp) as date,
+        SUM(CASE WHEN status = 'MISMATCH' THEN 1 ELSE 0 END) * 100.0 / COUNT(*) as mismatch_percentage
+      FROM `${PROJECT_ID}.${DOMAIN}_audit.reconciliation_results`
+      WHERE DATE(reconciliation_timestamp) >= DATE_SUB(CURRENT_DATE(), INTERVAL 30)
+      GROUP BY date
+      ORDER BY date

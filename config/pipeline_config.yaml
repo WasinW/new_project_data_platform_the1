@@ -215,19 +215,19 @@ audit:
 
 # Windowing Configuration for Realtime Processing
 windowing:
-  enabled: true  # Global windowing toggle
-  
+  enabled: true # Global windowing toggle
+
   # Default window configuration
   default:
-    type: fixed  # fixed, sliding, session
+    type: fixed # fixed, sliding, session
     duration_seconds: 30
     allowed_lateness_seconds: 60
-    accumulation_mode: discarding  # discarding, accumulating
+    accumulation_mode: discarding # discarding, accumulating
     trigger:
       type: after_watermark
       early_firings: 1
       late_firings: 1
-  
+
   # Step-specific window configurations
   steps:
     message_ingestion:
@@ -235,29 +235,29 @@ windowing:
       type: fixed
       duration_seconds: 10
       accumulation_mode: accumulating
-      
+
     dependency_check:
-      enabled: true  
+      enabled: true
       type: fixed
       duration_seconds: 30
       allowed_lateness_seconds: 120
-      
+
     fetch_source:
       enabled: true
       type: sliding
       duration_seconds: 60
       period_seconds: 30
-      
+
     distribution:
       enabled: true
       type: fixed
       duration_seconds: 30
-      
+
     transformation:
       enabled: true
       type: session
       gap_duration_seconds: 10
-      
+
     aggregation:
       enabled: true
       type: fixed
@@ -265,18 +265,18 @@ windowing:
       trigger:
         type: repeatedly
         after_count: 100
-        
+
     audit:
       enabled: true
       type: fixed
       duration_seconds: 120
-      
+
   # Batch mode specific windowing
   batch_windowing:
-    enabled: true  # Enable windowing for batch mode
+    enabled: true # Enable windowing for batch mode
     type: fixed
-    duration_seconds: 300  # 5 minute windows for batch
-    max_elements: 10000  # Process in chunks
+    duration_seconds: 300 # 5 minute windows for batch
+    max_elements: 10000 # Process in chunks
 
 # Performance Settings
 performance:
