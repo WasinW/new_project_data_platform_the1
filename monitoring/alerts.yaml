@@ -14,6 +14,82 @@ alerts:
       - slack
     severity: "CRITICAL"
   
+  # Windowing-specific alerts
+  - name: window_high_latency
+    description: "Alert when window processing latency exceeds threshold"
+    query: |
+      SELECT COUNT(*) as high_latency_windows
+      FROM `${PROJECT_ID}.${DOMAIN}_audit.windowing_alerts`
+      WHERE alert_level IN ('HIGH_LATENCY', 'MODERATE_LATENCY')
+        AND generated_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 15 MINUTE)
+    threshold: 5
+    comparison: "GREATER_THAN"
+    notification_channels: 
+      - email
+      - slack
+    severity: "WARNING"
+    
+  - name: empty_windows
+    description: "Alert when multiple windows process zero records"
+    query: |
+      SELECT COUNT(*) as empty_windows
+      FROM `${PROJECT_ID}.${DOMAIN}_audit.windowing_alerts`
+      WHERE alert_level = 'EMPTY_WINDOW'
+        AND generated_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 MINUTE)
+    threshold: 10
+    comparison: "GREATER_THAN"
+    notification_channels: 
+      - email
+      - slack
+    severity: "WARNING"
+    
+  - name: window_processing_stopped
+    description: "Alert when no windows are processed for extended period"
+    query: |
+      SELECT TIMESTAMP_DIFF(
+        CURRENT_TIMESTAMP(),
+        MAX(PARSE_TIMESTAMP('%Y-%m-%dT%H:%M:%S', audit_timestamp)),
+        MINUTE
+      ) as minutes_since_last_window
+      FROM `${PROJECT_ID}.${DOMAIN}_audit.window_summaries`
+      WHERE pipeline_mode = 'realtime'
+    threshold: 20
+    comparison: "GREATER_THAN"
+    notification_channels: 
+      - pagerduty
+      - slack
+    severity: "CRITICAL"
+
+  - name: window_throughput_drop
+    description: "Alert when window throughput drops significantly"
+    query: |
+      WITH current_hour AS (
+        SELECT SUM(record_count) as current_records
+        FROM `${PROJECT_ID}.${DOMAIN}_audit.window_summaries`
+        WHERE PARSE_TIMESTAMP('%Y-%m-%dT%H:%M:%S', audit_timestamp) >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 1 HOUR)
+          AND pipeline_mode = 'realtime'
+      ), previous_hour AS (
+        SELECT SUM(record_count) as previous_records
+        FROM `${PROJECT_ID}.${DOMAIN}_audit.window_summaries`
+        WHERE PARSE_TIMESTAMP('%Y-%m-%dT%H:%M:%S', audit_timestamp) >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 2 HOUR)
+          AND PARSE_TIMESTAMP('%Y-%m-%dT%H:%M:%S', audit_timestamp) < TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 1 HOUR)
+          AND pipeline_mode = 'realtime'
+      )
+      SELECT 
+        CASE 
+          WHEN p.previous_records > 0 THEN
+            SAFE_DIVIDE(ABS(c.current_records - p.previous_records), p.previous_records) * 100
+          ELSE 0
+        END as throughput_change_percentage
+      FROM current_hour c
+      CROSS JOIN previous_hour p
+    threshold: 50
+    comparison: "GREATER_THAN"
+    notification_channels: 
+      - email
+      - slack
+    severity: "WARNING"
+  
   - name: reconciliation_mismatch_high
     description: "Alert when reconciliation mismatch rate is high"
     query: |

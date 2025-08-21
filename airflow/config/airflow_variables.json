@@ -28,7 +28,15 @@
       "config_path": "gs://pipeline-configs/product/config.yaml"
     }
   },
-  
+
+  "windowing_config": {
+    "member_windowing_enabled": "true",
+    "order_windowing_enabled": "true",
+    "product_windowing_enabled": "false",
+    "global_windowing_enabled": "true",
+    "windowing_monitoring_enabled": "true"
+  },
+
   "batch_domains": ["member", "order"],
   
   "pipeline_environments": {

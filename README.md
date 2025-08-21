@@ -102,12 +102,102 @@ gcp-data-pipeline/
 - **Technology**: Airflow + Dataflow Batch
 - **Trigger**: Hourly schedule
 - **Source**: BigQuery
+- **Windowing**: Optional windowing for large dataset processing
 
 ### 4. Reconciliation Pipeline
 - **Purpose**: Daily validation against AWS S3 reference data
 - **Technology**: Airflow + Dataflow
 - **Trigger**: Daily schedule
 - **Output**: Comparison reports
+
+## Windowing Configuration
+
+### Overview
+Enhanced windowing support allows for flexible data processing patterns across both batch and realtime modes. Windows help manage data flow, handle late arrivals, and optimize throughput.
+
+### Configuration (`config/pipeline_config.yaml`)
+```yaml
+windowing:
+  enabled: true  # Global windowing toggle
+  
+  # Default window configuration
+  default:
+    type: fixed  # fixed, sliding, session
+    duration_seconds: 30
+    allowed_lateness_seconds: 60
+    accumulation_mode: discarding  # discarding, accumulating
+    trigger:
+      type: after_watermark
+      early_firings: 1
+      late_firings: 1
+  
+  # Step-specific configurations
+  steps:
+    message_ingestion:
+      enabled: true
+      type: fixed
+      duration_seconds: 10
+      accumulation_mode: accumulating
+      
+    dependency_check:
+      enabled: true  
+      type: fixed
+      duration_seconds: 30
+      allowed_lateness_seconds: 120
+      
+    fetch_source:
+      enabled: true
+      type: sliding
+      duration_seconds: 60
+      period_seconds: 30
+      
+    distribution:
+      enabled: true
+      type: fixed
+      duration_seconds: 30
+      
+    transformation:
+      enabled: true
+      type: session
+      gap_duration_seconds: 10
+      
+    aggregation:
+      enabled: true
+      type: fixed
+      duration_seconds: 60
+      trigger:
+        type: repeatedly
+        after_count: 100
+  
+  # Batch mode windowing
+  batch_windowing:
+    enabled: true
+    type: fixed
+    duration_seconds: 300  # 5 minute windows
+    max_elements: 10000   # Process in chunks
+```
+
+### Window Types
+
+1. **Fixed Windows**: Process data in fixed time intervals
+   - Best for: Regular batch processing, consistent aggregations
+   - Example: 30-second windows for realtime ingestion
+
+2. **Sliding Windows**: Overlapping time windows
+   - Best for: Moving averages, trend analysis
+   - Example: 60-second windows sliding every 30 seconds
+
+3. **Session Windows**: Dynamic windows based on data gaps
+   - Best for: User session analysis, activity-based grouping
+   - Example: 10-second gap for session detection
+
+### Windowing Benefits
+
+- **Late Data Handling**: Configure allowed lateness for out-of-order data
+- **Throughput Control**: Manage processing load with window sizing
+- **Memory Management**: Batch mode windowing prevents memory overflow
+- **Monitoring**: Window-level metrics and alerting
+- **Watermark Management**: Automatic progress tracking
 
 ## Configuration
 
@@ -119,6 +209,7 @@ The main configuration file supports:
 - Data validation rules
 - Error handling settings
 - Environment-specific overrides
+- **Windowing configuration** (new)
 
 Example:
 ```yaml
@@ -131,6 +222,11 @@ source:
 distribution_mapping:
   raw_a1: [a, b, c]
   refined_b1: [a, b, c, d, e, f]
+windowing:
+  enabled: true
+  default:
+    type: fixed
+    duration_seconds: 30
 ```
 
 ### Airflow Variables (`airflow/config/airflow_variables.json`)
@@ -138,6 +234,7 @@ distribution_mapping:
 Contains environment-specific settings:
 - GCP project and region settings
 - Service account configurations
+- **Windowing control variables** (new)
 - Storage bucket locations
 - Domain configurations
 
@@ -193,14 +290,60 @@ windowing:
 - Error distribution
 - Data quality scores
 - Processing latency
+- **Window processing metrics** (new)
+- **Window latency analysis** (new)
+- **Throughput per window** (new)
+
+### Window-Specific Monitoring
+
+#### Windowing Views (`monitoring/windowing_monitoring.sql`)
+- `window_processing_stats`: Window processing statistics and trends
+- `window_latency_analysis`: Latency analysis with percentiles
+- `window_throughput_analysis`: Throughput and efficiency metrics
+- `window_error_analysis`: Window-related error tracking
+- `windowing_alerts`: Real-time alerting for window issues
+
+#### Key Windowing Metrics
+```sql
+-- Window latency monitoring
+SELECT 
+  pipeline_name,
+  AVG(latency_seconds) as avg_latency,
+  PERCENTILE_CONT(latency_seconds, 0.95) as p95_latency
+FROM window_summaries
+WHERE processing_date = CURRENT_DATE()
+GROUP BY pipeline_name;
+
+-- Window throughput analysis
+SELECT 
+  hour_of_day,
+  SUM(record_count) as total_records,
+  COUNT(DISTINCT window_start) as window_count,
+  SUM(record_count) / COUNT(DISTINCT window_start) as avg_records_per_window
+FROM window_summaries
+WHERE processing_date = CURRENT_DATE()
+GROUP BY hour_of_day;
+```
 
 ### Alert Configuration (`monitoring/alerts.yaml`)
+
+New windowing-specific alerts:
 ```yaml
 alerts:
-  - name: pipeline_failure
-    query: "SELECT COUNT(*) FROM audit.processing_logs WHERE status = 'FAILED'"
-    threshold: 0
+  - name: window_high_latency
+    query: "Check for windows with >5min latency"
+    threshold: 5
     notification_channels: [email, slack]
+    
+  - name: empty_windows
+    query: "Alert on windows with zero records"
+    threshold: 10
+    notification_channels: [email, slack]
+    
+  - name: window_processing_stopped
+    query: "Alert when no windows processed for 20+ minutes"
+    threshold: 20
+    notification_channels: [pagerduty, slack]
 ```
 
 ## Data Quality
@@ -227,7 +370,7 @@ alerts:
 
 ## Operations
 
-### Starting Pipelines
+### Starting Pipelines with Windowing
 
 ```bash
 # Trigger initiate pipeline
@@ -235,10 +378,43 @@ gcloud composer environments run composer-env \
     --location asia-southeast1 \
     dags trigger initiate_member_pipeline
 
-# Start realtime pipeline
+# Start realtime pipeline with windowing enabled
 gcloud composer environments run composer-env \
     --location asia-southeast1 \
     dags unpause realtime_member_pipeline
+
+# Control windowing via Airflow variables
+gcloud composer environments run composer-env \
+    --location asia-southeast1 \
+    variables set member_windowing_enabled true
+
+# Start batch pipeline with windowing for large datasets
+python -m dataflow.pipelines.hybrid_pipeline \
+    --mode=batch \
+    --config_path=gs://bucket/config.yaml \
+    --enable_windowing=true \
+    --batch_window_hours=24 \
+    --runner=DataflowRunner
+```
+
+### Windowing Control Commands
+
+```bash
+# Enable/disable windowing per domain
+airflow variables set member_windowing_enabled true
+airflow variables set order_windowing_enabled false
+
+# Check window processing status
+bq query --use_legacy_sql=false \
+  "SELECT * FROM \`project.member_audit.windowing_alerts\` 
+   WHERE generated_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 1 HOUR)"
+
+# Monitor window latency
+bq query --use_legacy_sql=false \
+  "SELECT pipeline_name, avg_window_latency_seconds, p95_latency_seconds 
+   FROM \`project.member_audit.window_latency_analysis\` 
+   WHERE processing_date = CURRENT_DATE() 
+   ORDER BY avg_window_latency_seconds DESC"
 ```
 
 ### Monitoring
@@ -246,8 +422,9 @@ gcloud composer environments run composer-env \
 Access monitoring dashboards through:
 - Cloud Console Dataflow page
 - Cloud Monitoring dashboards
-- BigQuery audit tables
+- BigQuery audit tables (including new windowing views)
 - Custom Grafana dashboards
+- **Window-specific metrics** (new)
 
 ### Troubleshooting
 
@@ -255,6 +432,9 @@ Common issues and solutions:
 
 1. **Pipeline failures**: Check audit tables for error details
 2. **Data quality issues**: Review validation logs
+3. **Window latency issues**: Check `windowing_alerts` view for high latency windows
+4. **Empty windows**: Verify upstream data availability and dependency checks
+5. **Window processing stopped**: Check pipeline health and resource availability
 3. **Performance problems**: Monitor resource usage and adjust scaling
 4. **Network issues**: Verify VPC and firewall configurations
 

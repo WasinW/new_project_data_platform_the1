@@ -1,5 +1,5 @@
 # config/pipeline_config.yaml
-project: ${GCP_PROJECT_ID:your-gcp-project-id}
+project: ${GCP_PROJECT_ID:ntt-test-data-bq-looker}
 region: ${GCP_REGION:asia-southeast1}
 domain: ${DOMAIN:member}
 environment: ${ENVIRONMENT:dev}
@@ -7,7 +7,7 @@ version: "1.0.0"
 
 # Source Configuration
 source:
-  project: ${SOURCE_PROJECT_ID:source-project-id}
+  project: ${SOURCE_PROJECT_ID:ntt-test-data-bq-looker}
   dataset: ${SOURCE_DATASET:refined_data}
   table: ${SOURCE_TABLE:personas}
 
@@ -26,59 +26,59 @@ pubsub:
 
 # Distribution Mapping - defines which columns go to which tables
 distribution_mapping:
-  raw_a1: [a, b, c]
-  raw_a2: [a, e, f]
-  raw_a3: [a, e, g]
-  refined_b1: [a, b, c, d, e, f]
-  refined_b2: [a, b, c, d]
-  refined_c1: [a, b, c, d, e, f, g]
+  raw_a1: [ member_id, member_name, member_status ]
+  raw_a2: [ member_id, email, phone ]
+  raw_a3: [ member_id, email, address ]
+  refined_b1: [ member_id, member_name, member_status, created_date, email, phone ]
+  refined_b2: [ member_id, member_name, member_status, created_date ]
+  refined_c1: [ member_id, member_name, member_status, created_date, email, phone, address ]
 
 # Column Mappings - how to transform column names and values
 column_mappings:
   raw_a1:
-    member_id: a
-    member_name: b
-    member_status: c
-    created_timestamp: 
+    member_id: member_id
+    member_name: member_name
+    member_status: member_status
+    created_timestamp:
       type: constant
       value: "{{ current_timestamp }}"
-  
+
   raw_a2:
-    member_id: a
+    member_id: member_id
     email: e
     phone: f
     contact_preference:
       type: expression
       expression: "'email' if element.get('e') else 'phone'"
-  
+
   raw_a3:
-    member_id: a
+    member_id: member_id
     email: e
     address: g
     full_contact:
       type: concat
-      columns: [e, g]
+      columns: [ e, g ]
       separator: " | "
-  
+
   refined_b1:
-    member_id: a
-    member_name: b
-    member_status: c
-    created_date: d
-    email: e
-    phone: f
+    member_id: member_id
+    member_name: member_name
+    member_status: member_status
+    created_date: created_date
+    email: email
+    phone: phone
     last_updated:
       type: constant
       value: "{{ processing_timestamp }}"
-  
+
   refined_b2:
-    member_id: a
-    member_name: b
-    member_status: c
-    created_date: d
+    member_id: member_id
+    member_name: member_name
+    member_status: member_status
+    created_date: created_date
     member_key:
       type: concat
-      columns: [a, b]
+      columns: [ member_name, created_date ]
       separator: "_"
     default_score:
       type: constant
@@ -86,15 +86,15 @@ column_mappings:
     status_code:
       type: expression
       expression: "1 if element.get('c') == 'active' else 0"
-  
+
   refined_c1:
-    member_id: a
-    member_name: b
-    member_status: c
-    created_date: d
-    email: e
-    phone: f
-    address: g
+    member_id: member_id
+    member_name: member_name
+    member_status: member_status
+    created_date: created_date
+    email: email
+    phone: phone
+    address: address
     record_hash:
       type: expression
       expression: "hashlib.md5(str(element).encode()).hexdigest()"
@@ -107,92 +107,92 @@ complex_transforms:
       lookup_table: ${GCP_PROJECT_ID}.reference_data.member_segments
       join_key: member_id
       cache_duration_minutes: 30
-      enrichment_fields: [segment, tier, region, signup_source]
-  
+      enrichment_fields: [ segment, tier, region, signup_source ]
+
   refined_c1:
     module: transforms.member.AddressStandardization
     params:
       address_validation_api: ${ADDRESS_API_ENDPOINT}
       standardization_level: strict
       country_code: TH
-  
+
   analytics_summary:
     module: transforms.analytics.MemberAggregation
     params:
-      group_by: [region, segment]
-      metrics: [total_value, transaction_count, avg_score]
+      group_by: [ region, segment ]
+      metrics: [ total_value, transaction_count, avg_score ]
       aggregation_window_days: 30
 
 # Data Validation Rules
 data_validation:
   enabled: true
   rules:
-    - name: member_id_required
-      type: required
-      field: member_id
-    - name: email_format
-      type: pattern
-      field: email
-      pattern: "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$"
-    - name: phone_length
-      type: length
-      field: phone
-      min: 10
-      max: 15
-    - name: member_name_not_empty
-      type: not_empty
-      field: member_name
-  
+  - name: member_id_required
+    type: required
+    field: member_id
+  - name: email_format
+    type: pattern
+    field: email
+    pattern: "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$"
+  - name: phone_length
+    type: length
+    field: phone
+    min: 10
+    max: 15
+  - name: member_name_not_empty
+    type: not_empty
+    field: member_name
+
   quality_checks:
-    - name: email_completeness
-      type: completeness
-      field: email
-      penalty: 10
-    - name: phone_format_consistency
-      type: format_consistency
-      field: phone
-      pattern: "^[0-9+-]+$"
-      penalty: 5
-    - name: transaction_value_outliers
-      type: outlier_detection
-      field: transaction_value
-      min_expected: 0
-      max_expected: 1000000
-      penalty: 15
-  
+  - name: email_completeness
+    type: completeness
+    field: email
+    penalty: 10
+  - name: phone_format_consistency
+    type: format_consistency
+    field: phone
+    pattern: "^[0-9+-]+$"
+    penalty: 5
+  - name: transaction_value_outliers
+    type: outlier_detection
+    field: transaction_value
+    min_expected: 0
+    max_expected: 1000000
+    penalty: 15
+
   min_quality_score: 70
   max_failed_rules: 2
 
 # Dependencies - upstream systems that must be ready
 dependencies:
-  - name: daily_etl_completion
-    project: ${GCP_PROJECT_ID}
-    dataset: batch_control
-    table: job_status
-    condition: "job_name = 'daily_etl' AND status = 'COMPLETED' AND DATE(completion_time) = CURRENT_DATE()"
-    fail_open: false
-  
-  - name: reference_data_available
-    project: ${GCP_PROJECT_ID}
-    dataset: reference_data
-    table: member_segments
-    condition: "DATE(last_updated) = CURRENT_DATE()"
-    fail_open: true
+- name: daily_etl_completion
+  project: ${GCP_PROJECT_ID}
+  dataset: batch_control
+  table: job_status
+  condition: "job_name = 'daily_etl' AND status = 'COMPLETED' AND DATE(completion_time) = CURRENT_DATE()"
+  fail_open: false
+
+- name: reference_data_available
+  project: ${GCP_PROJECT_ID}
+  dataset: reference_data
+  table: member_segments
+  condition: "DATE(last_updated) = CURRENT_DATE()"
+  fail_open: true
 
 # Aggregation Configuration
 aggregation:
   enabled: true
-  tables: [refined_b1, refined_c1]
-  group_by_fields: [member_id, region]
+  tables: [ refined_b1, refined_c1 ]
+  group_by_fields: [ member_id, region ]
   metrics:
-    - name: total_transactions
-      type: count
-    - name: total_value
-      type: sum
-      field: transaction_value
-    - name: avg_score
-      type: avg
-      field: member_score
+  - name: total_transactions
+    type: count
+  - name: total_value
+    type: sum
+    field: transaction_value
+  - name: avg_score
+    type: avg
+    field: member_score
 
 # Error Handling and Dead Letter Queues
 error_handling:
@@ -213,6 +213,71 @@ audit:
   batch_size: 100
   flush_interval_seconds: 300
 
+# Windowing Configuration for Realtime Processing
+windowing:
+  enabled: true  # Global windowing toggle
+  
+  # Default window configuration
+  default:
+    type: fixed  # fixed, sliding, session
+    duration_seconds: 30
+    allowed_lateness_seconds: 60
+    accumulation_mode: discarding  # discarding, accumulating
+    trigger:
+      type: after_watermark
+      early_firings: 1
+      late_firings: 1
+  
+  # Step-specific window configurations
+  steps:
+    message_ingestion:
+      enabled: true
+      type: fixed
+      duration_seconds: 10
+      accumulation_mode: accumulating
+      
+    dependency_check:
+      enabled: true  
+      type: fixed
+      duration_seconds: 30
+      allowed_lateness_seconds: 120
+      
+    fetch_source:
+      enabled: true
+      type: sliding
+      duration_seconds: 60
+      period_seconds: 30
+      
+    distribution:
+      enabled: true
+      type: fixed
+      duration_seconds: 30
+      
+    transformation:
+      enabled: true
+      type: session
+      gap_duration_seconds: 10
+      
+    aggregation:
+      enabled: true
+      type: fixed
+      duration_seconds: 60
+      trigger:
+        type: repeatedly
+        after_count: 100
+        
+    audit:
+      enabled: true
+      type: fixed
+      duration_seconds: 120
+      
+  # Batch mode specific windowing
+  batch_windowing:
+    enabled: true  # Enable windowing for batch mode
+    type: fixed
+    duration_seconds: 300  # 5 minute windows for batch
+    max_elements: 10000  # Process in chunks
+
 # Performance Settings
 performance:
   batch_size: 500
@@ -230,14 +295,14 @@ environments:
       machine_type: n2-standard-2
     audit:
       batch_size: 10
-  
+
   staging:
     performance:
       max_workers: 10
       machine_type: n2-standard-4
     data_validation:
       min_quality_score: 60
-  
+
   prod:
     performance:
       max_workers: 50
