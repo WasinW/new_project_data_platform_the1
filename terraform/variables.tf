@@ -33,6 +33,64 @@ variable "primary_domain" {
   default     = "member"
 }
 
+variable "domain" {
+  description = "Current domain for the data pipeline"
+  type        = string
+  default     = "member"
+}
+
+# Secret Manager variables
+variable "aws_s3_access_key_id" {
+  description = "AWS S3 Access Key ID"
+  type        = string
+  sensitive   = true
+}
+
+variable "aws_s3_secret_access_key" {
+  description = "AWS S3 Secret Access Key"
+  type        = string
+  sensitive   = true
+}
+
+variable "aws_s3_bucket_name" {
+  description = "AWS S3 Bucket Name"
+  type        = string
+}
+
+# BigQuery Service Account variables
+variable "bq_service_account_email" {
+  description = "BigQuery service account email"
+  type        = string
+}
+
+variable "bq_service_account_private_key_id" {
+  description = "BigQuery service account private key ID"
+  type        = string
+  sensitive   = true
+}
+
+variable "bq_service_account_private_key" {
+  description = "BigQuery service account private key"
+  type        = string
+  sensitive   = true
+}
+
+variable "bq_service_account_client_id" {
+  description = "BigQuery service account client ID"
+  type        = string
+}
+
+# Service account emails for IAM
+variable "dataflow_service_account_email" {
+  description = "Dataflow service account email"
+  type        = string
+}
+
+variable "composer_service_account_email" {
+  description = "Composer service account email"
+  type        = string
+}
+
 variable "data_admin_email" {
   description = "Email of the data administrator"
   type        = string

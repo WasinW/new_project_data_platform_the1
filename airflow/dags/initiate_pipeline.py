@@ -13,6 +13,26 @@ from airflow.providers.google.cloud.operators.bigquery import (
 from datetime import datetime, timedelta
 from google.cloud import datacatalog_v1, lineage_v1
 import json
+import yaml
+import sys
+import os
+
+# Add dataflow utils to path
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'dataflow', 'utils'))
+
+try:
+    from secret_manager import SecretManagerClient, get_secrets_from_config, setup_aws_credentials_for_sts
+    from dataplex_manager import DataplexManager, setup_dataplex_from_config
+    from config_loader import ConfigLoader
+except ImportError as e:
+    print(f"Warning: Could not import custom modules: {e}")
+    # Define fallback functions
+    def get_secrets_from_config(config, project_id):
+        return {}
+    def setup_aws_credentials_for_sts(secrets):
+        return {}
+    def setup_dataplex_from_config(config):
+        return None
 
 default_args = {
     'owner': 'data-platform',
@@ -35,6 +55,82 @@ def create_initiate_dag(domain: str, tables: list):
         catchup=False,
         tags=['initiate', domain, 'migration']
     )
+    
+    def setup_dataplex_infrastructure(**context):
+        """Setup Dataplex lake, zones, and assets"""
+        domain = context['params']['domain']
+        
+        try:
+            # Load pipeline configuration
+            config_path = Variable.get(f'{domain}_config_path', 'config/pipeline_config.yaml')
+            
+            if config_path.startswith('gs://'):
+                # Load from GCS
+                from google.cloud import storage
+                storage_client = storage.Client()
+                bucket_name = config_path.split('/')[2]
+                blob_path = '/'.join(config_path.split('/')[3:])
+                bucket = storage_client.bucket(bucket_name)
+                blob = bucket.blob(blob_path)
+                config_content = blob.download_as_text()
+                config = yaml.safe_load(config_content)
+            else:
+                # Load local file
+                with open(config_path, 'r') as f:
+                    config = yaml.safe_load(f)
+            
+            # Setup Dataplex infrastructure
+            dataplex_result = setup_dataplex_from_config(config)
+            
+            if dataplex_result and dataplex_result.get('status') == 'success':
+                print(f"Dataplex setup completed for domain {domain}")
+                return dataplex_result
+            else:
+                print(f"Dataplex setup failed or skipped: {dataplex_result}")
+                return None
+                
+        except Exception as e:
+            print(f"Error setting up Dataplex infrastructure: {e}")
+            return None
+    
+    def get_pipeline_secrets(**context):
+        """Retrieve secrets from Secret Manager"""
+        domain = context['params']['domain']
+        
+        try:
+            # Load pipeline configuration
+            config_path = Variable.get(f'{domain}_config_path', 'config/pipeline_config.yaml')
+            
+            if config_path.startswith('gs://'):
+                # Load from GCS
+                from google.cloud import storage
+                storage_client = storage.Client()
+                bucket_name = config_path.split('/')[2]
+                blob_path = '/'.join(config_path.split('/')[3:])
+                bucket = storage_client.bucket(bucket_name)
+                blob = bucket.blob(blob_path)
+                config_content = blob.download_as_text()
+                config = yaml.safe_load(config_content)
+            else:
+                # Load local file
+                with open(config_path, 'r') as f:
+                    config = yaml.safe_load(f)
+            
+            project_id = Variable.get('gcp_project_id')
+            
+            # Get secrets from Secret Manager
+            secrets = get_secrets_from_config(config, project_id)
+            
+            # Store secrets in XCom for other tasks
+            context['task_instance'].xcom_push(key='pipeline_secrets', value=secrets)
+            
+            print(f"Retrieved secrets for domain {domain}")
+            return secrets
+            
+        except Exception as e:
+            print(f"Error retrieving secrets: {e}")
+            # Return empty dict to allow pipeline to continue with defaults
+            return {}
     
     def track_data_lineage(**context):
         """Track data lineage for the migration"""
@@ -81,7 +177,11 @@ def create_initiate_dag(domain: str, tables: list):
         )
         
         # Create lineage events
-        source_s3 = f"s3://{Variable.get('s3_bucket')}/{domain}/{table}/"
+        # Get secrets from XCom to get the correct S3 bucket name
+        secrets = context['task_instance'].xcom_pull(key='pipeline_secrets') or {}
+        s3_bucket = secrets.get('s3_credentials', {}).get('s3_bucket_name', Variable.get('s3_bucket', 'default-bucket'))
+        
+        source_s3 = f"s3://{s3_bucket}/{domain}/{table}/"
         target_bq = f"bigquery:{project_id}.{domain}_raw.{table}"
         
         event_link = lineage_v1.EventLink(
@@ -140,37 +240,75 @@ def create_initiate_dag(domain: str, tables: list):
         print(f"Migration validated: {record_count} records in {table}")
         return record_count
     
-    # Create tasks for each table
-    for table in tables:
-        # Create Storage Transfer Service job
-        create_sts_job = CloudDataTransferServiceCreateJobOperator(
-            task_id=f'create_sts_job_{table}',
-            body={
-                'description': f'Transfer {table} from S3 to GCS',
-                'status': 'ENABLED',
-                'projectId': Variable.get('gcp_project_id'),
-                'transferSpec': {
-                    'awsS3DataSource': {
-                        'bucketName': Variable.get('s3_bucket'),
-                        'path': f'{domain}/{table}/',
-                        'awsAccessKey': {
-                            'accessKeyId': Variable.get('aws_access_key_id'),
-                            'secretAccessKey': Variable.get('aws_secret_access_key')
-                        }
-                    },
-                    'gcsDataSink': {
-                        'bucketName': f'gcs-staging-{domain}',
-                        'path': f'{table}/'
+    # Setup infrastructure tasks
+    setup_dataplex = PythonOperator(
+        task_id='setup_dataplex_infrastructure',
+        python_callable=setup_dataplex_infrastructure,
+        params={'domain': domain},
+        dag=dag
+    )
+    
+    get_secrets = PythonOperator(
+        task_id='get_pipeline_secrets',
+        python_callable=get_pipeline_secrets,
+        params={'domain': domain},
+        dag=dag
+    )
+    
+    def create_sts_job_with_secrets(**context):
+        """Create STS job using secrets from Secret Manager"""
+        table = context['params']['table']
+        domain = context['params']['domain']
+        
+        # Get secrets from XCom
+        secrets = context['task_instance'].xcom_pull(key='pipeline_secrets') or {}
+        s3_creds = secrets.get('s3_credentials', {})
+        
+        # Use secrets or fall back to Airflow variables
+        aws_access_key = s3_creds.get('aws_access_key_id', Variable.get('aws_access_key_id'))
+        aws_secret_key = s3_creds.get('aws_secret_access_key', Variable.get('aws_secret_access_key'))
+        s3_bucket = s3_creds.get('s3_bucket_name', Variable.get('s3_bucket'))
+        
+        from google.cloud import storage_transfer
+        
+        client = storage_transfer.StorageTransferServiceClient()
+        project_id = Variable.get('gcp_project_id')
+        
+        transfer_job = {
+            'description': f'Transfer {table} from S3 to GCS',
+            'status': 'ENABLED',
+            'project_id': project_id,
+            'transfer_spec': {
+                'aws_s3_data_source': {
+                    'bucket_name': s3_bucket,
+                    'path': f'{domain}/{table}/',
+                    'aws_access_key': {
+                        'access_key_id': aws_access_key,
+                        'secret_access_key': aws_secret_key
                     }
                 },
-                'schedule': {
-                    'scheduleStartDate': {
-                        'year': 2025,
-                        'month': 1,
-                        'day': 1
-                    }
+                'gcs_data_sink': {
+                    'bucket_name': f'gcs-staging-{domain}',
+                    'path': f'{table}/'
                 }
-            },
+            }
+        }
+        
+        response = client.create_transfer_job(
+            parent=f'projects/{project_id}',
+            transfer_job=transfer_job
+        )
+        
+        print(f"Created STS job: {response.name}")
+        return response.name
+    
+    # Create tasks for each table
+    for table in tables:
+        # Create Storage Transfer Service job using secrets
+        create_sts_job = PythonOperator(
+            task_id=f'create_sts_job_{table}',
+            python_callable=create_sts_job_with_secrets,
+            params={'table': table, 'domain': domain},
             dag=dag
         )
         
@@ -231,7 +369,8 @@ def create_initiate_dag(domain: str, tables: list):
         )
         
         # Set task dependencies
-        create_sts_job >> run_sts_job >> create_external_table >> load_to_native
+        setup_dataplex >> get_secrets
+        get_secrets >> create_sts_job >> run_sts_job >> create_external_table >> load_to_native
         load_to_native >> [track_lineage, register_dataplex] >> validate
     
     return dag

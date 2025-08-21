@@ -24,6 +24,8 @@ This project implements a comprehensive data pipeline solution for migrating fro
 - **Comprehensive Auditing**: Full data lineage and processing metrics
 - **Error Handling**: Robust error handling with dead letter queues
 - **Windowing Support**: Advanced windowing for streaming data
+- **Secret Management**: Secure credential storage using Google Secret Manager
+- **Data Lineage**: Automated data lineage tracking with Dataplex
 - **Monitoring**: Comprehensive monitoring and alerting
 
 ## Project Structure
@@ -196,6 +198,123 @@ windowing:
 - **Late Data Handling**: Configure allowed lateness for out-of-order data
 - **Throughput Control**: Manage processing load with window sizing
 - **Memory Management**: Batch mode windowing prevents memory overflow
+
+## Secret Management
+
+This project uses Google Cloud Secret Manager to securely store and manage credentials and sensitive configuration data.
+
+### Configured Secrets
+
+1. **AWS S3 Credentials** (for initiate and reconciliation pipelines)
+   - `aws-s3-access-key-id`: AWS access key ID
+   - `aws-s3-secret-access-key`: AWS secret access key
+   - `aws-s3-bucket-name`: Source S3 bucket name
+
+2. **BigQuery Service Account** (for external table access)
+   - `bq-service-account-key`: Service account JSON key
+
+### Secret Usage in Pipelines
+
+**Initiate Pipeline:**
+```python
+# Automatically retrieves S3 credentials from Secret Manager
+secrets = get_secrets_from_config(config, project_id)
+s3_creds = secrets['s3_credentials']
+
+# Uses credentials for Storage Transfer Service
+sts_config = {
+    'aws_access_key': s3_creds['aws_access_key_id'],
+    'aws_secret_key': s3_creds['aws_secret_access_key'],
+    'bucket_name': s3_creds['s3_bucket_name']
+}
+```
+
+**Reconciliation Pipeline:**
+```python
+# Uses same Secret Manager integration
+secrets = get_secrets_from_config(config, project_id)
+# Credentials automatically injected into Dataflow job
+```
+
+### Creating Secrets
+
+```bash
+# Create S3 credentials
+gcloud secrets create aws-s3-access-key-id --data-file=<path-to-key-file>
+gcloud secrets create aws-s3-secret-access-key --data-file=<path-to-secret-file>
+gcloud secrets create aws-s3-bucket-name --data-file=<path-to-bucket-file>
+
+# Create BigQuery service account key
+gcloud secrets create bq-service-account-key --data-file=service-account.json
+```
+
+## Data Lineage with Dataplex
+
+This project uses Google Cloud Dataplex for comprehensive data lineage tracking and data discovery across all pipelines.
+
+### Dataplex Infrastructure
+
+**Data Lake Structure:**
+```
+{domain}-data-lake/
+├── {domain}-raw-zone/          # Raw data from sources
+│   ├── {domain}_raw (BigQuery)
+│   └── gcs-staging-{domain} (GCS)
+├── {domain}-refined-zone/      # Processed/transformed data
+│   └── {domain}_refined (BigQuery)
+└── {domain}-analytics-zone/    # Analytics-ready data
+    └── {domain}_analytics (BigQuery)
+```
+
+**Asset Types:**
+- **BigQuery Datasets**: Native tables in raw, refined, analytics layers
+- **GCS Buckets**: Staging area for external table data
+- **External Tables**: S3 data accessed via BigQuery external tables
+
+### Automated Lineage Tracking
+
+**Initiate Pipeline:**
+- Tracks S3 → GCS → BigQuery External → BigQuery Native lineage
+- One-time setup during initial migration
+- Full end-to-end data movement tracking
+
+**Realtime/Batch Pipelines:**
+- Automatic lineage tracking for each processed record
+- Source → Target table relationships
+- Transformation step tracking
+- Window-level lineage for streaming data
+
+**Lineage Creation:**
+```python
+# Automatically tracks lineage for each target table
+pipeline_info = {
+    'name': f"{domain}_{pipeline_mode}_pipeline",
+    'type': pipeline_mode,  # 'realtime', 'batch', 'initiate'
+    'domain': domain
+}
+
+dataplex_manager.track_pipeline_lineage(
+    pipeline_info, source_info, target_info
+)
+```
+
+### Dataplex Benefits
+
+1. **Automatic Discovery**: Assets are automatically discovered and cataloged
+2. **Data Governance**: Central view of all data assets and their relationships
+3. **Compliance**: Audit trail for data movement and transformations
+4. **Impact Analysis**: Understanding downstream effects of data changes
+5. **Data Quality**: Integration with data quality monitoring
+
+### Setup Status
+
+✅ **Dataplex Infrastructure Enabled**
+- Data lakes, zones, and assets are automatically created via Terraform
+- No manual Dataplex configuration required
+- Lineage tracking is enabled for all pipeline modes
+- Assets are automatically registered during pipeline execution
+
+**Note**: Dataplex infrastructure is created once during initial deployment and reused across all pipeline executions. No additional lineage tracking steps are required in individual pipeline runs.
 - **Monitoring**: Window-level metrics and alerting
 - **Watermark Management**: Automatic progress tracking
 

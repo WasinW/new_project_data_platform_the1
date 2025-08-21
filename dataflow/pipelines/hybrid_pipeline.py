@@ -15,6 +15,7 @@ import logging
 
 # Import windowing utilities
 from utils.windowing import WindowingConfig, WindowedDependencyChecker, WindowedAggregator, BatchWindowProcessor, WindowAuditLogger
+from utils.dataplex_manager import DataplexManager
 from transforms.distributor import DataDistributor
 from transforms.complex_transforms import ColumnMapper, ComplexTransform
 from utils.audit_logger import AuditLogger
@@ -73,6 +74,72 @@ class DependencyChecker(beam.DoFn):
             return False
         
         return False
+
+class DataplexLineageTracker(beam.DoFn):
+    """Track data lineage in Dataplex for batch and realtime pipelines"""
+    
+    def __init__(self, pipeline_config: Dict[str, Any]):
+        self.pipeline_config = pipeline_config
+        self.project_id = pipeline_config.get('project')
+        self.region = pipeline_config.get('region')
+        self.domain = pipeline_config.get('domain')
+        self.pipeline_mode = pipeline_config.get('mode')
+    
+    def setup(self):
+        """Initialize Dataplex manager"""
+        self.dataplex_manager = DataplexManager(self.project_id, self.region)
+    
+    def process(self, element):
+        """Track lineage for processed element"""
+        try:
+            # Extract source and target information
+            source_table = self.pipeline_config.get('source', {}).get('table')
+            target_table = element.get('_target_table')
+            
+            if not source_table or not target_table:
+                yield element
+                return
+            
+            # Create pipeline information
+            pipeline_info = {
+                'name': f"{self.domain}_{self.pipeline_mode}_pipeline",
+                'type': self.pipeline_mode,
+                'domain': self.domain,
+                'execution_id': element.get('_execution_id', f"exec_{int(datetime.utcnow().timestamp())}")
+            }
+            
+            # Create source information
+            source_dataset = self.pipeline_config.get('source', {}).get('dataset')
+            source_info = {
+                'fully_qualified_name': f"bigquery:{self.project_id}.{source_dataset}.{source_table}"
+            }
+            
+            # Create target information
+            target_dataset = self.pipeline_config.get('target_datasets', {}).get(
+                target_table.split('_')[0], f"{self.domain}_raw"
+            )
+            target_info = [{
+                'table_name': target_table,
+                'fully_qualified_name': f"bigquery:{self.project_id}.{target_dataset}.{target_table}"
+            }]
+            
+            # Track lineage
+            self.dataplex_manager.track_pipeline_lineage(
+                pipeline_info, source_info, target_info
+            )
+            
+            # Add lineage tracking metadata to element
+            element['_lineage_tracked'] = True
+            element['_lineage_timestamp'] = datetime.utcnow().isoformat()
+            
+            yield element
+            
+        except Exception as e:
+            logging.error(f"Failed to track lineage: {e}")
+            # Continue processing even if lineage tracking fails
+            element['_lineage_tracked'] = False
+            element['_lineage_error'] = str(e)
+            yield element
 
 class FetchFromBigQuery(beam.DoFn):
     """Fetch full records from BigQuery based on keys"""
@@ -620,10 +687,24 @@ def run_pipeline(pipeline_options: PipelineOptions):
             else:
                 final_records = mapped_records
             
+            # Add target table metadata and track lineage
+            final_records_with_lineage = (
+                final_records
+                | f'AddTargetTableMetadata_{table}' >> beam.Map(
+                    lambda x, table_name=table: {**x, '_target_table': table_name}
+                )
+                | f'TrackDataplexLineage_{table}' >> beam.ParDo(
+                    DataplexLineageTracker({
+                        **config,
+                        'mode': pipeline_options.mode
+                    })
+                )
+            )
+            
             # Write to BigQuery
             dataset = config['target_datasets'].get(table.split('_')[0], config['domain'] + '_raw')
             
-            (final_records
+            (final_records_with_lineage
              | f'WriteToBigQuery_{table}' >> WriteToBigQuery(
                  table=f"{config['project']}.{dataset}.{table}",
                  schema='SCHEMA_AUTODETECT',

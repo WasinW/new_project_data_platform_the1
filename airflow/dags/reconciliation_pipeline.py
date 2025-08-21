@@ -9,6 +9,19 @@ from airflow.providers.google.cloud.operators.storage_transfer import (
 from airflow.operators.python import PythonOperator
 from datetime import datetime, timedelta
 import json
+import yaml
+import sys
+import os
+
+# Add dataflow utils to path
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'dataflow', 'utils'))
+
+try:
+    from secret_manager import SecretManagerClient, get_secrets_from_config
+except ImportError as e:
+    print(f"Warning: Could not import secret_manager: {e}")
+    def get_secrets_from_config(config, project_id):
+        return {}
 
 default_args = {
     'owner': 'data-platform',
@@ -31,9 +44,58 @@ def create_reconciliation_dag(domain: str, tables: list):
         tags=['reconciliation', domain, 'validation']
     )
     
+    def get_reconciliation_secrets(**context):
+        """Retrieve secrets for reconciliation from Secret Manager"""
+        domain = context['params']['domain']
+        
+        try:
+            # Load pipeline configuration
+            config_path = Variable.get(f'{domain}_config_path', 'config/pipeline_config.yaml')
+            
+            if config_path.startswith('gs://'):
+                # Load from GCS
+                from google.cloud import storage
+                storage_client = storage.Client()
+                bucket_name = config_path.split('/')[2]
+                blob_path = '/'.join(config_path.split('/')[3:])
+                bucket = storage_client.bucket(bucket_name)
+                blob = bucket.blob(blob_path)
+                config_content = blob.download_as_text()
+                config = yaml.safe_load(config_content)
+            else:
+                # Load local file
+                with open(config_path, 'r') as f:
+                    config = yaml.safe_load(f)
+            
+            project_id = Variable.get('gcp_project_id')
+            
+            # Get secrets from Secret Manager
+            secrets = get_secrets_from_config(config, project_id)
+            
+            # Store secrets in XCom for other tasks
+            context['task_instance'].xcom_push(key='reconciliation_secrets', value=secrets)
+            
+            print(f"Retrieved reconciliation secrets for domain {domain}")
+            return secrets
+            
+        except Exception as e:
+            print(f"Error retrieving reconciliation secrets: {e}")
+            # Return empty dict to allow pipeline to continue with defaults
+            return {}
+    
     def prepare_s3_copy(**context):
-        """Prepare S3 copy job for reconciliation"""
+        """Prepare S3 copy job for reconciliation using secrets"""
         table = context['params']['table']
+        domain = context['params']['domain']
+        
+        # Get secrets from XCom
+        secrets = context['task_instance'].xcom_pull(key='reconciliation_secrets') or {}
+        s3_creds = secrets.get('s3_credentials', {})
+        
+        # Use secrets or fall back to Airflow variables
+        aws_access_key = s3_creds.get('aws_access_key_id', Variable.get('aws_access_key_id'))
+        aws_secret_key = s3_creds.get('aws_secret_access_key', Variable.get('aws_secret_access_key'))
+        s3_bucket = s3_creds.get('s3_bucket_name', Variable.get('s3_bucket'))
         
         copy_job_config = {
             'description': f'Daily reconciliation copy for {table}',
@@ -41,11 +103,11 @@ def create_reconciliation_dag(domain: str, tables: list):
             'projectId': Variable.get('gcp_project_id'),
             'transferSpec': {
                 'awsS3DataSource': {
-                    'bucketName': Variable.get('s3_bucket'),
+                    'bucketName': s3_bucket,
                     'path': f'{domain}/{table}/{{ ds }}/',
                     'awsAccessKey': {
-                        'accessKeyId': Variable.get('aws_access_key_id'),
-                        'secretAccessKey': Variable.get('aws_secret_access_key')
+                        'accessKeyId': aws_access_key,
+                        'secretAccessKey': aws_secret_key
                     }
                 },
                 'gcsDataSink': {
@@ -124,13 +186,21 @@ def create_reconciliation_dag(domain: str, tables: list):
         
         return stats
     
+    # Setup secrets task
+    get_secrets = PythonOperator(
+        task_id='get_reconciliation_secrets',
+        python_callable=get_reconciliation_secrets,
+        params={'domain': domain},
+        dag=dag
+    )
+    
     # Create tasks for each table
     for table in tables:
-        # Copy S3 data to temp location
-        copy_s3_data = CloudDataTransferServiceCreateJobOperator(
+        # Copy S3 data to temp location using secrets
+        copy_s3_data = PythonOperator(
             task_id=f'copy_s3_data_{table}',
-            body=prepare_s3_copy,
-            params={'table': table},
+            python_callable=prepare_s3_copy,
+            params={'table': table, 'domain': domain},
             dag=dag
         )
         
@@ -177,7 +247,7 @@ def create_reconciliation_dag(domain: str, tables: list):
         )
         
         # Set dependencies
-        copy_s3_data >> run_s3_copy >> create_external_table >> run_reconciliation >> analyze_results
+        get_secrets >> copy_s3_data >> run_s3_copy >> create_external_table >> run_reconciliation >> analyze_results
     
     return dag
 
