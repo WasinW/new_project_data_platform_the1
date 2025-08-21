@@ -24,10 +24,10 @@ secrets:
     aws_access_key_id: projects/${GCP_PROJECT_ID}/secrets/aws-s3-access-key-id/versions/latest
     aws_secret_access_key: projects/${GCP_PROJECT_ID}/secrets/aws-s3-secret-access-key/versions/latest
     s3_bucket_name: projects/${GCP_PROJECT_ID}/secrets/aws-s3-bucket-name/versions/latest
-  
+
   bigquery_credentials:
     service_account_key: projects/${GCP_PROJECT_ID}/secrets/bq-service-account-key/versions/latest
-  
+
   # Dataplex Configuration
   dataplex:
     lake_id: ${DOMAIN}-data-lake
