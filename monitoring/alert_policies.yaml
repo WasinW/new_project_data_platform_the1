@@ -1,14 +1,14 @@
-# monitoring/alert_policies_v2.yaml
-# Cloud Monitoring Alert Policies V2 - No Manual Client Management
+# monitoring/alert_policies.yaml
+# Cloud Monitoring Alert Policies - No Manual Client Management
 # ✅ Uses native Cloud Monitoring alerts instead of manual metric collection
 # ✅ Replaces MetricServiceClient with declarative alert policies
 # ✅ Automated alerting for windowing and pipeline health
 
-# Deploy with: gcloud alpha monitoring policies create --policy-from-file=alert_policies_v2.yaml
+# Deploy with: gcloud alpha monitoring policies create --policy-from-file=alert_policies.yaml
 
 # Dataflow Window Processing Latency Alert
 {
-  "displayName": "Dataflow Window Processing Latency (V2)",
+  "displayName": "Dataflow Window Processing Latency",
   "documentation":
     {
       "content": "This alert triggers when Dataflow window processing latency exceeds 5 minutes.
@@ -28,7 +28,7 @@
         3. Check BigQuery write performance",
       "mimeType": "text/markdown"
     },
-  "conditions": [ { "displayName": "High window processing latency", "conditionThreshold": { "filter": "resource.type=\"dataflow_job\" AND resource.label.job_name=~\"realtime-.*-v2-.*\" AND metric.type=\"dataflow.googleapis.com/job/streaming/watermark_age\"", "comparison": "COMPARISON_GREATER_THAN", "thresholdValue": 300, "duration": "120s", "aggregations": [ { "alignmentPeriod": "60s", "perSeriesAligner": "ALIGN_MAX", "crossSeriesReducer": "REDUCE_MAX", "groupByFields": [ "resource.label.job_name" ] } ] } } ],
+  "conditions": [ { "displayName": "High window processing latency", "conditionThreshold": { "filter": "resource.type=\"dataflow_job\" AND resource.label.job_name=~\"realtime-.*\" AND metric.type=\"dataflow.googleapis.com/job/streaming/watermark_age\"", "comparison": "COMPARISON_GREATER_THAN", "thresholdValue": 300, "duration": "120s", "aggregations": [ { "alignmentPeriod": "60s", "perSeriesAligner": "ALIGN_MAX", "crossSeriesReducer": "REDUCE_MAX", "groupByFields": [ "resource.label.job_name" ] } ] } } ],
   "alertStrategy": { "autoClose": "86400s", "notificationRateLimit": { "period": "300s" } },
   "enabled": true
 }
@@ -36,7 +36,7 @@
 
 # BigQuery Storage Write API Performance Alert  
 {
-  "displayName": "BigQuery Storage Write API Performance (V2)",
+  "displayName": "BigQuery Storage Write API Performance",
   "documentation":
     {
       "content": "This alert monitors BigQuery Storage Write API performance for our Native I/O pipelines.
@@ -64,7 +64,7 @@
 
 # Pub/Sub Subscription Backlog Alert
 {
-  "displayName": "Pub/Sub Subscription Backlog (V2)",
+  "displayName": "Pub/Sub Subscription Backlog",
   "documentation":
     {
       "content": "Alert when Pub/Sub subscription backlog exceeds threshold.
@@ -92,10 +92,10 @@
 
 # Pipeline Error Rate Alert
 {
-  "displayName": "Pipeline Error Rate (V2)",
+  "displayName": "Pipeline Error Rate",
   "documentation":
     {
-      "content": "Monitors error rates across all V2 pipelines using BigQuery metrics.
+      "content": "Monitors error rates across all current pipelines using BigQuery metrics.
 
 
         ✅ Uses BigQuery audit logs instead of manual client monitoring
@@ -120,10 +120,10 @@
 
 # Secret Manager Access Alert
 {
-  "displayName": "Secret Manager Access Failures (V2)",
+  "displayName": "Secret Manager Access Failures",
   "documentation":
     {
-      "content": "Monitors Secret Manager access failures for V2 pipelines.
+      "content": "Monitors Secret Manager access failures for current pipelines.
 
 
         ✅ Tracks SecretsManagerRetrieveSecretOperator failures

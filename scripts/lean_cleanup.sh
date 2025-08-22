@@ -49,9 +49,9 @@ done
 echo ""
 echo "🔍 Step 2: Checking for duplicate code patterns"
 
-# Check if hybrid_pipeline.py (V1) still exists
+# Check if legacy hybrid_pipeline.py still exists
 if [[ -f "$PROJECT_ROOT/dataflow/pipelines/hybrid_pipeline.py" ]]; then
-    echo_warning "V1 hybrid_pipeline.py still exists. Consider renaming it to hybrid_pipeline_legacy.py"
+    echo_warning "Legacy hybrid_pipeline.py still exists. Consider renaming it to hybrid_pipeline_legacy.py"
 fi
 
 # Check for unused classes in transform files
@@ -74,11 +74,11 @@ if [[ -d "$TRANSFORM_DIR" ]]; then
     fi
 fi
 
-# Step 3: Validate V2 pipelines are properly using Native I/O
+# Step 3: Validate pipelines are properly using Native I/O
 echo ""
-echo "🚀 Step 3: Validating V2 pipelines use Native I/O"
+echo "🚀 Step 3: Validating pipelines use Native I/O"
 
-V2_PIPELINES=(
+PIPELINES=(
     "airflow/dags/initiate_pipeline.py"
     "airflow/dags/batch_pipeline.py"
     "airflow/dags/realtime_trigger.py"
@@ -86,7 +86,7 @@ V2_PIPELINES=(
     "dataflow/pipelines/hybrid_pipeline.py"
 )
 
-for pipeline in "${V2_PIPELINES[@]}"; do
+for pipeline in "${PIPELINES[@]}"; do
     pipeline_path="$PROJECT_ROOT/$pipeline"
     if [[ -f "$pipeline_path" ]]; then
         # Check for manual client instantiation (bad patterns)
@@ -98,7 +98,7 @@ for pipeline in "${V2_PIPELINES[@]}"; do
             echo_success "Native operators/I/O confirmed in $pipeline"
         fi
     else
-        echo_warning "V2 pipeline not found: $pipeline"
+        echo_warning "Pipeline not found: $pipeline"
     fi
 done
 
@@ -161,9 +161,9 @@ echo "🎉 Lean cleanup completed!"
 echo ""
 echo "📋 Next steps:"
 echo "1. Review git diff to ensure all changes are correct"
-echo "2. Run tests to validate V2 pipelines"
-echo "3. Deploy V2 pipelines to staging environment"
-echo "4. Decommission V1 pipelines after validation"
+echo "2. Run tests to validate pipelines"
+echo "3. Deploy pipelines to staging environment"
+echo "4. Decommission legacy pipelines after validation"
 echo ""
 echo "💡 For remaining items (Redshift, BigTable integration):"
 echo "   These were intentionally skipped as requested in lean_feature.md"

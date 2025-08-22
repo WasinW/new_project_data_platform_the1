@@ -1,6 +1,6 @@
-# dataflow/pipelines/hybrid_pipeline_v2.py
+# dataflow/pipelines/hybrid_pipeline.py
 """
-Hybrid Pipeline V2 - Native I/O Solution  
+Hybrid Pipeline - Native I/O Solution  
 ✅ Uses Apache Beam Native I/O instead of manual client creation
 ✅ Zero client management - Beam handles all connections
 ✅ Built-in connection pooling and retries
@@ -24,8 +24,8 @@ import logging
 from utils.windowing import WindowingConfig, WindowedDependencyChecker, WindowedAggregator, BatchWindowProcessor, WindowAuditLogger
 
 
-class HybridPipelineOptionsV2(PipelineOptions):
-    """Custom pipeline options for hybrid pipeline V2"""
+class HybridPipelineOptions(PipelineOptions):
+    """Custom pipeline options for hybrid pipeline"""
     
     @classmethod
     def _add_argparse_args(cls, parser):
@@ -79,7 +79,7 @@ class NativeDataTransform(beam.DoFn):
             # Add metadata
             transformed.update({
                 '_processing_timestamp': datetime.utcnow().isoformat(),
-                '_pipeline_version': 'v2_native_io',
+                '_pipeline_version': 'native_io',
                 '_transform_applied': True
             })
             
@@ -125,10 +125,10 @@ class NativeDataTransform(beam.DoFn):
             return value
 
 
-class HybridPipelineV2:
-    """✅ Hybrid Pipeline V2 with Native I/O - Zero Manual Client Management"""
+class HybridPipeline:
+    """✅ Hybrid Pipeline with Native I/O - Zero Manual Client Management"""
     
-    def __init__(self, options: HybridPipelineOptionsV2):
+    def __init__(self, options: HybridPipelineOptions):
         self.options = options
         self.config = self._load_config()
         
@@ -314,14 +314,14 @@ class HybridPipelineV2:
 def run():
     """Main pipeline runner"""
     pipeline_options = PipelineOptions()
-    hybrid_options = pipeline_options.view_as(HybridPipelineOptionsV2)
+    hybrid_options = pipeline_options.view_as(HybridPipelineOptions)
     
     # Set streaming mode for realtime
     if hybrid_options.mode == 'realtime':
         pipeline_options.view_as(StandardOptions).streaming = True
     
     # Initialize pipeline
-    hybrid_pipeline = HybridPipelineV2(hybrid_options)
+    hybrid_pipeline = HybridPipeline(hybrid_options)
     
     # Run appropriate pipeline mode
     with beam.Pipeline(options=pipeline_options) as pipeline:

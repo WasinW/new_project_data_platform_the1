@@ -1,4 +1,4 @@
-# Cloud Monitoring V2 - Native Alerts
+# Cloud Monitoring - Native Alerts
 
 ## 🎯 **Overview**
 
@@ -12,17 +12,17 @@ for metric in metrics:
     monitoring_client.create_time_series(...)  # Memory leak!
 ```
 
-## ✅ **แก้ไขแล้ว (V2)**
+## ✅ **แก้ไขแล้ว**
 ```bash
 # ✅ Declarative alert policies
-gcloud alpha monitoring policies create --policy-from-file=alert_policies_v2.yaml
+gcloud alpha monitoring policies create --policy-from-file=alert_policies.yaml
 ```
 
 ## 📂 **Files Structure**
 
 ```
 monitoring/
-├── alert_policies_v2.yaml     # 🚨 Native alert policies (JSON format)
+├── alert_policies.yaml     # 🚨 Native alert policies (JSON format)
 ├── deploy_alerts.sh           # 🚀 Deployment script
 └── README.md                  # 📚 This documentation
 ```
@@ -40,7 +40,7 @@ chmod +x deploy_alerts.sh
 ### **2. Verify Deployment**
 ```bash
 # List deployed alert policies
-gcloud alpha monitoring policies list --project=$PROJECT_ID --filter="displayName:*V2*"
+gcloud alpha monitoring policies list --project=$PROJECT_ID --filter="displayName:*Current*"
 
 # Check notification channels
 gcloud alpha monitoring channels list --project=$PROJECT_ID
@@ -50,11 +50,11 @@ gcloud alpha monitoring channels list --project=$PROJECT_ID
 
 | Alert Policy | Threshold | Purpose |
 |-------------|-----------|---------|
-| **Dataflow Window Latency V2** | >5 minutes | Detect processing delays |
-| **BigQuery Storage Write Performance V2** | >10 seconds | Monitor Storage API performance |
-| **Pub/Sub Backlog V2** | >1000 messages | Early warning for backlogs |
-| **Pipeline Error Rate V2** | >10 errors/min | Track Native I/O failures |
-| **Secret Manager Access Failures V2** | >5 failures/10min | Authentication issues |
+| **Dataflow Window Latency** | >5 minutes | Detect processing delays |
+| **BigQuery Storage Write Performance** | >10 seconds | Monitor Storage API performance |
+| **Pub/Sub Backlog** | >1000 messages | Early warning for backlogs |
+| **Pipeline Error Rate** | >10 errors/min | Track Native I/O failures |
+| **Secret Manager Access Failures** | >5 failures/10min | Authentication issues |
 
 ## 🔧 **Configuration**
 
@@ -74,7 +74,7 @@ gcloud alpha monitoring channels create \
 ```
 
 ### **Alert Thresholds**
-Modify thresholds in `alert_policies_v2.yaml`:
+Modify thresholds in `alert_policies.yaml`:
 ```json
 {
   "thresholdValue": 300,  // 5 minutes in seconds
@@ -84,7 +84,7 @@ Modify thresholds in `alert_policies_v2.yaml`:
 
 ## 📊 **Benefits Over V1**
 
-| Metric | V1 (Manual) | V2 (Native) | Improvement |
+| Metric | Legacy (Manual) | Current (Native) | Improvement |
 |--------|-------------|-------------|-------------|
 | **Setup Time** | 2-3 hours | 5 minutes | 95% faster |
 | **Memory Usage** | 500MB+ | 0MB | 100% reduction |
@@ -136,7 +136,7 @@ gcloud services list --enabled --project=$PROJECT_ID
 ### **Add New Domain Monitoring**
 ```bash
 # Copy existing alert policy JSON
-cp alert_policies_v2.yaml new_domain_alerts.yaml
+cp alert_policies.yaml new_domain_alerts.yaml
 
 # Modify filters for new domain
 sed -i 's/member/new_domain/g' new_domain_alerts.yaml
@@ -178,8 +178,8 @@ gcloud secrets create pagerduty-api-key --data-file=pagerduty-key.txt
 
 ## 🔗 **Related Documentation**
 
-- [Best Practices V2](../docs/best_practices_v2.md)
-- [Pipeline V2 Migration Guide](../docs/migration_guide.md)
+- [Best Practices](../docs/best_practices.md)
+- [Pipeline Migration Guide](../docs/migration_guide.md)
 - [Cloud Monitoring Official Docs](https://cloud.google.com/monitoring/docs)
 
 ---

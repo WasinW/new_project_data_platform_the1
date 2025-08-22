@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # monitoring/deploy_alerts.sh
-# Deploy Cloud Monitoring Alert Policies V2 - No Manual Client Management
+# Deploy Cloud Monitoring Alert Policies - No Manual Client Management
 # ✅ Uses gcloud CLI instead of manual MetricServiceClient
 # ✅ Declarative alert policy deployment
 
@@ -16,17 +16,17 @@ if [[ -z "$PROJECT_ID" ]]; then
     exit 1
 fi
 
-echo "🚀 Deploying Cloud Monitoring Alert Policies V2..."
+echo "🚀 Deploying Cloud Monitoring Alert Policies..."
 echo "📍 Project: $PROJECT_ID"
 echo "🌏 Region: $REGION"
 
 # Create alert policies from YAML
 ALERT_POLICIES=(
-    "dataflow-window-latency-v2"
-    "bigquery-storage-write-performance-v2"
-    "pubsub-backlog-v2"
-    "pipeline-error-rate-v2"
-    "secret-manager-access-failures-v2"
+    "dataflow-window-latency"
+    "bigquery-storage-write-performance"
+    "pubsub-backlog"
+    "pipeline-error-rate"
+    "secret-manager-access-failures"
 )
 
 # Extract JSON policies from the multi-document YAML
@@ -40,7 +40,7 @@ BEGIN { RS="---"; doc=0 }
     print $0 > filename
     close(filename)
 }
-' alert_policies_v2.yaml
+' alert_policies.yaml
 
 echo "📝 Extracted individual alert policy files..."
 
@@ -57,7 +57,7 @@ for i in {1..5}; do
                 echo "⚠️  Warning: Alert policy ${i} may already exist, updating..."
                 # Try to update existing policy (requires policy ID)
                 POLICY_ID=$(gcloud alpha monitoring policies list \
-                    --filter="displayName:*V2*" \
+                    --filter="displayName:*Current*" \
                     --format="value(name)" \
                     --project="$PROJECT_ID" | head -1)
                 
@@ -110,10 +110,10 @@ if [[ -z "$EMAIL_CHANNEL_ID" ]]; then
 fi
 
 echo "📊 Monitoring setup summary:"
-echo "✅ Alert Policies: $(gcloud alpha monitoring policies list --project="$PROJECT_ID" --filter="displayName:*V2*" --format="value(displayName)" | wc -l) deployed"
+echo "✅ Alert Policies: $(gcloud alpha monitoring policies list --project="$PROJECT_ID" --filter="displayName:*Current*" --format="value(displayName)" | wc -l) deployed"
 echo "✅ Notification Channels: $(gcloud alpha monitoring channels list --project="$PROJECT_ID" --format="value(displayName)" | wc -l) configured"
 
 echo ""
-echo "🎉 Cloud Monitoring V2 deployment completed!"
+echo "🎉 Cloud Monitoring deployment completed!"
 echo "📈 View alerts: https://console.cloud.google.com/monitoring/alerting?project=$PROJECT_ID"
 echo "🔔 Configure notification channels: https://console.cloud.google.com/monitoring/settings/notifications?project=$PROJECT_ID"

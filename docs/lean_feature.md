@@ -19,7 +19,7 @@
 3. **Pipeline Batch** ✅
    - ใช้ Dataflow mode=batch
    - มี windowing สำหรับ batch (batch_windowing config)
-   - ใช้ hybrid_pipeline_v2.py ร่วมกับ realtime
+   - ใช้ hybrid_pipeline.py ร่วมกับ realtime
 
 4. **Pipeline Reconciliation** ✅
    - มี STS สำหรับ copy S3 to GCS
@@ -45,7 +45,7 @@
 
 ### **ใน hybrid_pipeline.py (ไฟล์ backup):**
 ```python
-# Classes ที่ไม่ได้ใช้ใน V2:
+# Classes ที่ไม่ได้ใช้ใน current version:
 - DependencyChecker  # แทนด้วย NativeDependencyChecker
 - FetchFromBigQuery  # ใช้ Native I/O แทน
 - DataDistributor (duplicate)  # มีใน distributor.py แล้ว
@@ -66,7 +66,7 @@
 ```python
 # Functions ที่ซ้ำซ้อน:
 - create_assets_for_tables()  # Terraform จัดการแล้ว
-- track_pipeline_lineage()  # ไม่ได้ใช้ใน V2 pipelines
+- track_pipeline_lineage()  # ไม่ได้ใช้ใน current pipelines
 ```
 
 ## 🧹 **Lean/Clean Up Recommendations:**
@@ -79,11 +79,11 @@ rm dataflow/Dockerfile
 rm dataflow/transforms/__init__.py
 ```
 
-### **2. Refactor hybrid_pipeline_v2.py:**
+### **2. Refactor hybrid_pipeline.py:**
 ```python
 # ลบ imports ที่ไม่ใช้
 # Remove: from utils.windowing import WindowedDependencyChecker, WindowedAggregator
-# เพราะไม่ได้ใช้ใน V2 implementation
+# เพราะไม่ได้ใช้ใน current implementation
 
 # ลบ config ที่ไม่ใช้
 # Remove unused config keys in _load_config()
@@ -124,7 +124,7 @@ redshift_credentials:
 
 2. **เพิ่ม BigTable Integration:**
 ```python
-# ใน hybrid_pipeline_v2.py
+# ใน hybrid_pipeline.py
 from apache_beam.io.gcp.bigtable import ReadFromBigtable
 
 # Add BigTable source option
@@ -145,14 +145,14 @@ if source_type == 'bigtable':
 gcp-data-pipeline/
 ├── airflow/
 │   ├── dags/
-│   │   ├── initiate_pipeline.py    # V2 only
-│   │   ├── realtime_trigger.py     # V2 only
-│   │   ├── batch_pipeline.py       # V2 only
-│   │   └── reconciliation_pipeline.py  # V2 only
+│   │   ├── initiate_pipeline.py    # Current only
+│   │   ├── realtime_trigger.py     # Current only
+│   │   ├── batch_pipeline.py       # Current only
+│   │   └── reconciliation_pipeline.py  # Current only
 │   └── config/
 ├── dataflow/
 │   ├── pipelines/
-│   │   ├── hybrid_pipeline.py      # Keep V2 only
+│   │   ├── hybrid_pipeline.py      # Keep current only
 │   │   └── reconciliation_pipeline.py
 │   ├── transforms/
 │   │   ├── distributor.py

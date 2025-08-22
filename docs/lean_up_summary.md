@@ -2,7 +2,10 @@
 
 ## 🎯 **Objective Completed**
 
-เราได้ทำการ lean up project ตาม `lean_feature.md` เรียบร้อยแล้ว โดยลบไฟล์และโค้ดที่ไม่ใช้ออก เพื่อให้โครงสร้างโปรเจค clean และ maintainable มากขึ้น
+เราได้ทำการ lean up project ต│   │   ├── initiate_pipeline.py      # ✅ Native operators
+│   │   ├── batch_pipeline.py         # ✅ Native operators
+│   │   ├── realtime_trigger.py       # ✅ Native operators
+│   │   └── reconciliation_pipeline.py  # ✅ Native operatorslean_feature.md` เรียบร้อยแล้ว โดยลบไฟล์และโค้ดที่ไม่ใช้ออก เพื่อให้โครงสร้างโปรเจค clean และ maintainable มากขึ้น
 
 ## ✅ **Files Removed**
 
@@ -30,14 +33,14 @@
 - ❌ `_create_lineage_client()` - ไม่จำเป็น
 
 **Functions Kept:**
-- ✅ `get_bigquery_client()` - ใช้ใน V2 pipelines
-- ✅ `get_storage_client()` - ใช้ใน V2 pipelines
-- ✅ `get_secret_manager_client()` - ใช้ใน V2 pipelines
+- ✅ `get_bigquery_client()` - ใช้ใน current pipelines
+- ✅ `get_storage_client()` - ใช้ใน current pipelines
+- ✅ `get_secret_manager_client()` - ใช้ใน current pipelines
 
 ### **2. dataplex_manager.py Simplified**
 **Functions Removed:**
 - ❌ `create_assets_for_tables()` - Terraform จัดการแล้ว
-- ❌ `track_pipeline_lineage()` - ไม่ได้ใช้ใน V2 pipelines
+- ❌ `track_pipeline_lineage()` - ไม่ได้ใช้ใน current pipelines
 
 **Imports Removed:**
 - ❌ `datacatalog_v1` - ไม่ใช้
@@ -51,7 +54,7 @@
 
 ## 📊 **Validation Results**
 
-### **✅ V2 Pipelines Native I/O Confirmed:**
+### **✅ Current Pipelines Native I/O Confirmed:**
 1. `airflow/dags/initiate_pipeline.py` - ✅ Native operators only
 2. `airflow/dags/batch_pipeline.py` - ✅ Native operators only
 3. `airflow/dags/realtime_trigger.py` - ✅ Native operators only
@@ -88,15 +91,15 @@
 gcp-data-pipeline/
 ├── airflow/
 │   ├── dags/
-│   │   ├── initiate_pipeline.py      # ✅ V2 Native operators
-│   │   ├── batch_pipeline.py         # ✅ V2 Native operators
-│   │   ├── realtime_trigger.py       # ✅ V2 Native operators
-│   │   └── reconciliation_pipeline.py  # ✅ V2 Native operators
+│   │   ├── initiate_pipeline.py      # ✅ Native operators
+│   │   ├── batch_pipeline.py         # ✅ Native operators
+│   │   ├── realtime_trigger.py       # ✅ Native operators
+│   │   └── reconciliation_pipeline.py  # ✅ Native operators
 │   └── config/
 │       └── airflow_variables.json
 ├── dataflow/
 │   ├── pipelines/
-│   │   ├── hybrid_pipeline.py        # ✅ V2 Native I/O
+│   │   ├── hybrid_pipeline.py        # ✅ Native I/O
 │   │   └── reconciliation_pipeline.py
 │   ├── transforms/
 │   │   ├── distributor.py           # ✅ Optimized
@@ -116,7 +119,7 @@ gcp-data-pipeline/
 ├── config/
 │   └── pipeline_config.yaml         # ✅ Streamlined
 ├── docs/
-│   ├── best_practices_v2.md         # ✅ V2 best practices
+│   ├── best_practices.md         # ✅ Best practices
 │   └── lean_feature.md              # ✅ Analysis report
 ├── scripts/
 │   ├── lean_cleanup.sh              # ✅ Cleanup validation
@@ -147,7 +150,7 @@ gcp-data-pipeline/
 - ✅ Easier to navigate
 - ✅ Clear separation of concerns
 - ✅ Single responsibility principle
-- ✅ Consistent V2 architecture
+- ✅ Consistent current architecture
 
 ### **4. Scalability:**
 - ✅ Native operator efficiency
@@ -168,7 +171,7 @@ gcp-data-pipeline/
 1. **Immediate:**
    - ✅ Review git diff
    - ✅ Commit lean up changes
-   - ✅ Test V2 pipelines
+   - ✅ Test current pipelines
 
 2. **Short Term:**
    - Deploy to staging environment
