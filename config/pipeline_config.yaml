@@ -181,7 +181,6 @@ reconciliation:
     comparison_columns: [ "member_name", "member_status", "email", "phone" ]
     schedule: "@daily"
     enabled: true
-
   # S3 source configuration
   s3_source:
     path_pattern: "${DOMAIN}/{table_name}/dt={{{{ ds }}}}"
