@@ -1,6 +1,6 @@
-# airflow/dags/initiate_pipeline_v2.py
+# airflow/dags/initiate_pipeline.py
 """
-Initiate Pipeline V2 - Native Operators Solution
+Initiate Pipeline - Native Operators Solution
 ✅ Uses SecretsManagerRetrieveSecretOperator instead of client creation
 ✅ Uses S3ToGCSOperator for data transfer
 ✅ Uses REST API for Storage Transfer Service
@@ -30,16 +30,16 @@ default_args = {
     'retry_delay': timedelta(minutes=5)
 }
 
-def create_initiate_dag_v2(domain: str, tables: list):
-    """Create initiate pipeline DAG V2 using native operators"""
+def create_initiate_dag(domain: str, tables: list):
+    """Create initiate pipeline DAG using native operators"""
     
     dag = DAG(
-        f'initiate_{domain}_pipeline_v2',
+        f'initiate_{domain}_pipeline',
         default_args=default_args,
-        description=f'One-time migration pipeline for {domain} domain (V2 - Native Operators)',
+        description=f'One-time migration pipeline for {domain} domain (Native Operators)',
         schedule_interval=None,  # Manual trigger only
         catchup=False,
-        tags=['initiate', domain, 'migration', 'v2', 'native-operators']
+        tags=['initiate', domain, 'migration', 'native-operators']
     )
     
     # Step 1: Get AWS Secrets using Native Operator (no client creation!)
@@ -223,15 +223,15 @@ def create_aws_connection(**context):
     return "AWS connection created/updated"
 
 
-# Create DAGs for each domain using V2 approach
+# Create DAGs for each domain using native operators
 domains_config = json.loads(Variable.get('initiate_domains', '[]'))
 for domain_config in domains_config:
     if isinstance(domain_config, dict):
         domain = domain_config.get('domain')
         tables = domain_config.get('tables', [])
         if domain and tables:
-            globals()[f'initiate_{domain}_v2_dag'] = create_initiate_dag_v2(domain, tables)
+            globals()[f'initiate_{domain}_dag'] = create_initiate_dag(domain, tables)
     elif isinstance(domain_config, str):
         # Backward compatibility
         default_tables = ['members', 'transactions', 'products']
-        globals()[f'initiate_{domain_config}_v2_dag'] = create_initiate_dag_v2(domain_config, default_tables)
+        globals()[f'initiate_{domain_config}_dag'] = create_initiate_dag(domain_config, default_tables)
