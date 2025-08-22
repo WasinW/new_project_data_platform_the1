@@ -28,30 +28,6 @@ secrets:
   bigquery_credentials:
     service_account_key: projects/${GCP_PROJECT_ID}/secrets/bq-service-account-key/versions/latest
 
-  # Dataplex Configuration
-  dataplex:
-    lake_id: ${DOMAIN}-data-lake
-    lake_display_name: "${DOMAIN} Data Lake"
-    zones:
-      raw:
-        zone_id: ${DOMAIN}-raw-zone
-        zone_display_name: "${DOMAIN} Raw Data Zone"
-        type: DATA_SCAN
-        resource_spec:
-          location_type: SINGLE_REGION
-      refined:
-        zone_id: ${DOMAIN}-refined-zone
-        zone_display_name: "${DOMAIN} Refined Data Zone"
-        type: CURATED
-        resource_spec:
-          location_type: SINGLE_REGION
-      analytics:
-        zone_id: ${DOMAIN}-analytics-zone
-        zone_display_name: "${DOMAIN} Analytics Data Zone"
-        type: CURATED
-        resource_spec:
-          location_type: SINGLE_REGION
-
 # Pub/Sub Configuration (for realtime mode)
 pubsub:
   subscription: projects/${GCP_PROJECT_ID}/subscriptions/${DOMAIN}-events-sub
@@ -132,30 +108,6 @@ column_mappings:
     record_hash:
       type: expression
       expression: "hashlib.md5(str(element).encode()).hexdigest()"
-
-# Complex Transformations - for advanced business logic
-complex_transforms:
-  refined_b1:
-    module: transforms.member.MemberProfileEnrichment
-    params:
-      lookup_table: ${GCP_PROJECT_ID}.reference_data.member_segments
-      join_key: member_id
-      cache_duration_minutes: 30
-      enrichment_fields: [ segment, tier, region, signup_source ]
-
-  refined_c1:
-    module: transforms.member.AddressStandardization
-    params:
-      address_validation_api: ${ADDRESS_API_ENDPOINT}
-      standardization_level: strict
-      country_code: TH
-
-  analytics_summary:
-    module: transforms.analytics.MemberAggregation
-    params:
-      group_by: [ region, segment ]
-      metrics: [ total_value, transaction_count, avg_score ]
-      aggregation_window_days: 30
 
 # Data Validation Rules
 data_validation:

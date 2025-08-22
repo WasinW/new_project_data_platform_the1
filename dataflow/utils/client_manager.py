@@ -57,22 +57,6 @@ class ClientManager:
             lambda: self._create_secret_manager_client()
         )
     
-    def get_dataplex_client(self, project_id: Optional[str] = None):
-        """Get Dataplex client with connection reuse"""
-        client_key = f"dataplex_{project_id or 'default'}"
-        return self._get_or_create_client(
-            client_key,
-            lambda: self._create_dataplex_client()
-        )
-    
-    def get_lineage_client(self, project_id: Optional[str] = None):
-        """Get Lineage client with connection reuse"""
-        client_key = f"lineage_{project_id or 'default'}"
-        return self._get_or_create_client(
-            client_key,
-            lambda: self._create_lineage_client()
-        )
-    
     def _get_or_create_client(self, client_key: str, factory_func):
         """Generic client getter with caching and thread safety"""
         current_time = time.time()
@@ -138,16 +122,6 @@ class ClientManager:
         """Create Secret Manager client"""
         from google.cloud import secretmanager
         return secretmanager.SecretManagerServiceClient()
-    
-    def _create_dataplex_client(self):
-        """Create Dataplex client"""
-        from google.cloud import dataplex_v1
-        return dataplex_v1.DataplexServiceClient()
-    
-    def _create_lineage_client(self):
-        """Create Lineage client"""
-        from google.cloud import lineage_v1
-        return lineage_v1.LineageClient()
     
     @contextmanager
     def batch_bigquery_client(self, project_id: Optional[str] = None):
@@ -231,16 +205,6 @@ def get_secret_manager_client(project_id: Optional[str] = None):
     return client_manager.get_secret_manager_client(project_id)
 
 
-def get_dataplex_client(project_id: Optional[str] = None):
-    """Get shared Dataplex client"""
-    return client_manager.get_dataplex_client(project_id)
-
-
-def get_lineage_client(project_id: Optional[str] = None):
-    """Get shared Lineage client"""
-    return client_manager.get_lineage_client(project_id)
-
-
 @contextmanager
 def batch_bigquery_operations(project_id: Optional[str] = None):
     """Context manager for batch BigQuery operations"""
@@ -281,25 +245,6 @@ class DataflowClientMixin:
         if not self._initialized:
             self.setup()
         return get_storage_client(self._project_id)
-
-
-# Background cleanup task for long-running processes
-def start_client_cleanup_task():
-    """Start background task to clean up expired clients"""
-    import threading
-    import time
-    
-    def cleanup_task():
-        while True:
-            try:
-                time.sleep(ClientManager.CLEANUP_INTERVAL)
-                client_manager.cleanup_expired_clients()
-            except Exception as e:
-                logging.error(f"Error in client cleanup task: {e}")
-    
-    cleanup_thread = threading.Thread(target=cleanup_task, daemon=True)
-    cleanup_thread.start()
-    logging.info("Started client cleanup background task")
 
 
 # Usage examples and best practices
