@@ -1,0 +1,146 @@
+# monitoring/alert_policies_v2.yaml
+# Cloud Monitoring Alert Policies V2 - No Manual Client Management
+# ✅ Uses native Cloud Monitoring alerts instead of manual metric collection
+# ✅ Replaces MetricServiceClient with declarative alert policies
+# ✅ Automated alerting for windowing and pipeline health
+
+# Deploy with: gcloud alpha monitoring policies create --policy-from-file=alert_policies_v2.yaml
+
+# Dataflow Window Processing Latency Alert
+{
+  "displayName": "Dataflow Window Processing Latency (V2)",
+  "documentation":
+    {
+      "content": "This alert triggers when Dataflow window processing latency exceeds 5 minutes.
+
+
+        ✅ Replaces manual MetricServiceClient polling
+
+        ✅ Uses native Cloud Monitoring metrics
+
+
+        Troubleshooting:
+
+        1. Check Dataflow job health in Cloud Console
+
+        2. Verify Pub/Sub message backlog
+
+        3. Check BigQuery write performance",
+      "mimeType": "text/markdown"
+    },
+  "conditions": [ { "displayName": "High window processing latency", "conditionThreshold": { "filter": "resource.type=\"dataflow_job\" AND resource.label.job_name=~\"realtime-.*-v2-.*\" AND metric.type=\"dataflow.googleapis.com/job/streaming/watermark_age\"", "comparison": "COMPARISON_GREATER_THAN", "thresholdValue": 300, "duration": "120s", "aggregations": [ { "alignmentPeriod": "60s", "perSeriesAligner": "ALIGN_MAX", "crossSeriesReducer": "REDUCE_MAX", "groupByFields": [ "resource.label.job_name" ] } ] } } ],
+  "alertStrategy": { "autoClose": "86400s", "notificationRateLimit": { "period": "300s" } },
+  "enabled": true
+}
+---
+
+# BigQuery Storage Write API Performance Alert  
+{
+  "displayName": "BigQuery Storage Write API Performance (V2)",
+  "documentation":
+    {
+      "content": "This alert monitors BigQuery Storage Write API performance for our Native I/O pipelines.
+
+
+        ✅ Monitors Storage Write API latency and throughput
+
+        ✅ Critical for realtime pipeline performance
+
+
+        Actions:
+
+        1. Check BigQuery quotas and limits
+
+        2. Verify table partitioning and clustering
+
+        3. Check for concurrent write conflicts",
+      "mimeType": "text/markdown"
+    },
+  "conditions": [ { "displayName": "High BigQuery write latency", "conditionThreshold": { "filter": "resource.type=\"bigquery_table\" AND metric.type=\"bigquery.googleapis.com/storage/api/request_latencies\" AND metric.label.method=\"storage.write\"", "comparison": "COMPARISON_GREATER_THAN", "thresholdValue": 10000, "duration": "180s", "aggregations": [ { "alignmentPeriod": "120s", "perSeriesAligner": "ALIGN_MEAN", "crossSeriesReducer": "REDUCE_MAX", "groupByFields": [ "resource.label.table_id" ] } ] } } ],
+  "alertStrategy": { "autoClose": "7200s" },
+  "enabled": true
+}
+---
+
+# Pub/Sub Subscription Backlog Alert
+{
+  "displayName": "Pub/Sub Subscription Backlog (V2)",
+  "documentation":
+    {
+      "content": "Alert when Pub/Sub subscription backlog exceeds threshold.
+
+
+        ✅ Monitors message backlog for realtime pipelines
+
+        ✅ Early warning for processing delays
+
+
+        Response:
+
+        1. Check Dataflow job autoscaling
+
+        2. Verify pipeline processing rate
+
+        3. Consider increasing max workers",
+      "mimeType": "text/markdown"
+    },
+  "conditions": [ { "displayName": "High subscription backlog", "conditionThreshold": { "filter": "resource.type=\"pubsub_subscription\" AND resource.label.subscription_id=~\".*-events-sub\" AND metric.type=\"pubsub.googleapis.com/subscription/num_undelivered_messages\"", "comparison": "COMPARISON_GREATER_THAN", "thresholdValue": 1000, "duration": "300s", "aggregations": [ { "alignmentPeriod": "60s", "perSeriesAligner": "ALIGN_MAX" } ] } } ],
+  "alertStrategy": { "autoClose": "3600s" },
+  "enabled": true
+}
+---
+
+# Pipeline Error Rate Alert
+{
+  "displayName": "Pipeline Error Rate (V2)",
+  "documentation":
+    {
+      "content": "Monitors error rates across all V2 pipelines using BigQuery metrics.
+
+
+        ✅ Uses BigQuery audit logs instead of manual client monitoring
+
+        ✅ Tracks errors from Native I/O operations
+
+
+        Investigation:
+
+        1. Check BigQuery error logs
+
+        2. Verify data schema compatibility
+
+        3. Check quota and permission issues",
+      "mimeType": "text/markdown"
+    },
+  "conditions": [ { "displayName": "High pipeline error rate", "conditionThreshold": { "filter": "resource.type=\"bigquery_table\" AND metric.type=\"bigquery.googleapis.com/job/num_failed_jobs\" AND resource.label.table_id=~\".*_errors.*\"", "comparison": "COMPARISON_GREATER_THAN", "thresholdValue": 10, "duration": "180s", "aggregations": [ { "alignmentPeriod": "60s", "perSeriesAligner": "ALIGN_RATE", "crossSeriesReducer": "REDUCE_SUM" } ] } } ],
+  "alertStrategy": { "autoClose": "1800s" },
+  "enabled": true
+}
+---
+
+# Secret Manager Access Alert
+{
+  "displayName": "Secret Manager Access Failures (V2)",
+  "documentation":
+    {
+      "content": "Monitors Secret Manager access failures for V2 pipelines.
+
+
+        ✅ Tracks SecretsManagerRetrieveSecretOperator failures
+
+        ✅ Critical for pipeline authentication
+
+
+        Resolution:
+
+        1. Check service account permissions
+
+        2. Verify secret names and versions
+
+        3. Check IAM bindings for Secret Manager",
+      "mimeType": "text/markdown"
+    },
+  "conditions": [ { "displayName": "Secret Manager access failures", "conditionThreshold": { "filter": "resource.type=\"secretmanager.googleapis.com/Secret\" AND metric.type=\"secretmanager.googleapis.com/api/request_count\" AND metric.label.response_code!=\"200\"", "comparison": "COMPARISON_GREATER_THAN", "thresholdValue": 5, "duration": "120s", "aggregations": [ { "alignmentPeriod": "600s", "perSeriesAligner": "ALIGN_RATE", "crossSeriesReducer": "REDUCE_SUM", "groupByFields": [ "resource.label.secret_id" ] } ] } } ],
+  "alertStrategy": { "autoClose": "3600s" },
+  "enabled": true
+}
