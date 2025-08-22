@@ -1,6 +1,6 @@
-# airflow/dags/reconciliation_pipeline_v2.py
+# airflow/dags/reconciliation_pipeline.py
 """
-Reconciliation Pipeline V2 - SQL-First Solution
+Reconciliation Pipeline - SQL-First Solution
 ✅ Uses BigQuery Federated Queries instead of Dataflow
 ✅ Uses SecretsManagerRetrieveSecretOperator for AWS credentials
 ✅ Uses BigQueryInsertJobOperator for all processing
@@ -23,16 +23,16 @@ default_args = {
     'retry_delay': timedelta(minutes=5)
 }
 
-def create_reconciliation_dag_v2(domain: str, tables: list):
-    """Create reconciliation pipeline DAG V2 using SQL-first approach"""
+def create_reconciliation_dag(domain: str, tables: list):
+    """Create reconciliation pipeline DAG using SQL-first approach"""
     
     dag = DAG(
-        f'reconciliation_{domain}_pipeline_v2',
+        f'reconciliation_{domain}_pipeline',
         default_args=default_args,
-        description=f'Daily reconciliation for {domain} domain (V2 - SQL-First)',
+        description=f'Daily reconciliation for {domain} domain (SQL-First)',
         schedule_interval='@daily',
         catchup=False,
-        tags=['reconciliation', domain, 'validation', 'v2', 'sql-first']
+        tags=['reconciliation', domain, 'validation', 'sql-first']
     )
     
     # ✅ Step 1: Get AWS Secrets using Native Operator (no client!)
@@ -303,15 +303,15 @@ def create_reconciliation_dag_v2(domain: str, tables: list):
     return dag
 
 
-# ✅ Create DAGs for each domain using V2 SQL-first approach
-domains_config = json.loads(Variable.get('reconciliation_domains_v2', '[]'))
+# ✅ Create DAGs for each domain using SQL-first approach
+domains_config = json.loads(Variable.get('reconciliation_domains', '[]'))
 for domain_config in domains_config:
     if isinstance(domain_config, dict):
         domain = domain_config.get('domain')
         tables = domain_config.get('tables', [])
         if domain and tables:
-            globals()[f'reconciliation_{domain}_v2_dag'] = create_reconciliation_dag_v2(domain, tables)
+            globals()[f'reconciliation_{domain}_dag'] = create_reconciliation_dag(domain, tables)
     elif isinstance(domain_config, str):
         # Backward compatibility
         default_tables = ['members', 'transactions']
-        globals()[f'reconciliation_{domain_config}_v2_dag'] = create_reconciliation_dag_v2(domain_config, default_tables)
+        globals()[f'reconciliation_{domain_config}_dag'] = create_reconciliation_dag(domain_config, default_tables)

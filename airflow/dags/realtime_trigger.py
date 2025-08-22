@@ -1,8 +1,8 @@
-# airflow/dags/realtime_trigger_v2.py
+# airflow/dags/realtime_trigger.py
 """
-Realtime Trigger V2 - Native Operators Solution
+Realtime Trigger - Native Operators Solution
 ✅ Uses BigQueryInsertJobOperator for dependency checks
-✅ Uses DataflowCreatePythonJobOperator with hybrid_pipeline_v2.py
+✅ Uses DataflowCreatePythonJobOperator with hybrid_pipeline.py
 ✅ No manual client creation
 """
 from airflow import DAG
@@ -23,17 +23,17 @@ default_args = {
     'retry_delay': timedelta(minutes=1)
 }
 
-def create_realtime_dag_v2(domain: str):
-    """Create realtime pipeline DAG V2 using native operators"""
+def create_realtime_dag(domain: str):
+    """Create realtime pipeline DAG using native operators"""
     
     dag = DAG(
-        f'realtime_{domain}_pipeline_v2',
+        f'realtime_{domain}_pipeline',
         default_args=default_args,
-        description=f'Realtime streaming pipeline for {domain} domain (V2 - Native Operators)',
+        description=f'Realtime streaming pipeline for {domain} domain (Native Operators)',
         schedule_interval=None,  # Always running
         catchup=False,
         max_active_runs=1,
-        tags=['realtime', domain, 'streaming', 'v2', 'native-operators']
+        tags=['realtime', domain, 'streaming', 'native-operators']
     )
     
     # ✅ Check dependencies using BigQuery Native Operator (no client!)
@@ -92,11 +92,11 @@ def create_realtime_dag_v2(domain: str):
         dag=dag
     )
     
-    # ✅ Start realtime Dataflow job using hybrid_pipeline_v2.py with Native I/O
+    # ✅ Start realtime Dataflow job using hybrid_pipeline.py with Native I/O
     start_realtime_dataflow = DataflowCreatePythonJobOperator(
-        task_id='start_realtime_dataflow_v2',
-        py_file='gs://dataflow-templates/hybrid_pipeline_v2.py',  # ✅ Use V2 with Native I/O
-        job_name=f"realtime-{domain}-v2-{{{{ ts_nodash }}}}",
+        task_id='start_realtime_dataflow',
+        py_file='gs://dataflow-templates/hybrid_pipeline.py',  # ✅ Use current version with Native I/O
+        job_name=f"realtime-{domain}-{{{{ ts_nodash }}}}",
         options={
             # ✅ Mode parameter - realtime processing
             'mode': 'realtime',
@@ -126,7 +126,7 @@ def create_realtime_dag_v2(domain: str):
             'trigger_frequency_seconds': 60,
         },
         dataflow_config={
-            'job_name': f'realtime-{domain}-v2',
+            'job_name': f'realtime-{domain}',
             'num_workers': 2,
             'max_num_workers': 10,
             'machine_type': 'n2-standard-2',
@@ -135,9 +135,8 @@ def create_realtime_dag_v2(domain: str):
             'network': '{{ var.value.dataflow_network }}',
             'subnetwork': '{{ var.value.dataflow_subnetwork }}',
             
-            # ✅ Optimizations for Native I/O streaming
+            # ✅ Optimizations for streaming
             'experiments': [
-                'use_runner_v2',
                 'enable_streaming_engine',
                 'use_portable_job_submission'
             ]
@@ -182,7 +181,7 @@ def create_realtime_dag_v2(domain: str):
                             ELSE 'HEALTHY'
                         END as health_status,
                         '{domain}' as domain,
-                        'realtime_pipeline_v2' as pipeline_type,
+                        'realtime_pipeline' as pipeline_type,
                         CURRENT_TIMESTAMP() as check_timestamp
                     FROM health_metrics h
                     CROSS JOIN error_metrics e
@@ -238,7 +237,7 @@ def create_realtime_dag_v2(domain: str):
     return dag
 
 
-# ✅ Create DAGs for each domain using V2 approach
-domains_config = json.loads(Variable.get('realtime_domains_v2', '["member", "order", "product"]'))
+# ✅ Create DAGs for each domain using native operators
+domains_config = json.loads(Variable.get('realtime_domains', '["member", "order", "product"]'))
 for domain in domains_config:
-    globals()[f'realtime_{domain}_v2_dag'] = create_realtime_dag_v2(domain)
+    globals()[f'realtime_{domain}_dag'] = create_realtime_dag(domain)
