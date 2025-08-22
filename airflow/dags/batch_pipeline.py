@@ -1,7 +1,7 @@
-# airflow/dags/batch_pipeline_v2.py
+# airflow/dags/batch_pipeline.py
 """
-Batch Pipeline V2 - Native Operators Solution
-✅ Uses DataflowCreatePythonJobOperator with hybrid_pipeline_v2.py
+Batch Pipeline - Native Operators Solution
+✅ Uses DataflowCreatePythonJobOperator with hybrid_pipeline.py
 ✅ No client creation - all done through Native I/O
 ✅ Reuses realtime code with mode=batch parameter
 """
@@ -22,16 +22,16 @@ default_args = {
     'retry_delay': timedelta(minutes=5)
 }
 
-def create_batch_dag_v2(domain: str):
-    """Create batch pipeline DAG V2 using native operators and hybrid_pipeline_v2.py"""
+def create_batch_dag(domain: str):
+    """Create batch pipeline DAG using native operators and hybrid_pipeline.py"""
     
     dag = DAG(
-        f'batch_{domain}_pipeline_v2',
+        f'batch_{domain}_pipeline',
         default_args=default_args,
-        description=f'Hourly batch pipeline for {domain} domain (V2 - Native I/O)',
+        description=f'Hourly batch pipeline for {domain} domain (Native I/O)',
         schedule_interval='@hourly',
         catchup=False,
-        tags=['batch', domain, 'v2', 'native-io']
+        tags=['batch', domain, 'native-io']
     )
     
     def prepare_batch_config(**context):
@@ -55,11 +55,11 @@ def create_batch_dag_v2(domain: str):
         dag=dag
     )
     
-    # ✅ Run batch processing using hybrid_pipeline_v2.py with Native I/O
+    # ✅ Run batch processing using hybrid_pipeline.py with Native I/O
     run_batch_dataflow = DataflowCreatePythonJobOperator(
-        task_id='run_batch_dataflow_v2',
-        py_file='gs://dataflow-templates/hybrid_pipeline_v2.py',  # ✅ Use V2 with Native I/O
-        job_name=f"batch-{domain}-v2-{{{{ ds_nodash }}}}",
+        task_id='run_batch_dataflow',
+        py_file='gs://dataflow-templates/hybrid_pipeline.py',  # ✅ Use current version with Native I/O
+        job_name=f"batch-{domain}-{{{{ ds_nodash }}}}",
         options={
             # ✅ Mode parameter - same code, different behavior
             'mode': 'batch',
@@ -84,7 +84,7 @@ def create_batch_dag_v2(domain: str):
             'enable_streaming_engine': False,  # Batch mode
         },
         dataflow_config={
-            'job_name': f'batch-{domain}-v2',
+            'job_name': f'batch-{domain}',
             'num_workers': 3,
             'max_num_workers': 10,
             'machine_type': 'n2-standard-4',
@@ -95,7 +95,7 @@ def create_batch_dag_v2(domain: str):
             
             # ✅ Optimizations for Native I/O
             'experiments': [
-                'use_runner_v2',  # Use Dataflow Runner V2
+                'enable_streaming_engine',  # Use streaming engine
                 'use_portable_job_submission'  # Better job submission
             ]
         },
@@ -179,7 +179,7 @@ def create_batch_dag_v2(domain: str):
     return dag
 
 
-# ✅ Create DAGs for each domain using V2 approach
-domains_config = json.loads(Variable.get('batch_domains_v2', '["member", "order", "product"]'))
+# ✅ Create DAGs for each domain using native operators
+domains_config = json.loads(Variable.get('batch_domains', '["member", "order", "product"]'))
 for domain in domains_config:
-    globals()[f'batch_{domain}_v2_dag'] = create_batch_dag_v2(domain)
+    globals()[f'batch_{domain}_dag'] = create_batch_dag(domain)
