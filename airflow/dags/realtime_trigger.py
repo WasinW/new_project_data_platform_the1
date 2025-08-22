@@ -39,6 +39,7 @@ def create_realtime_dag(domain: str):
     # ✅ Check dependencies using BigQuery Native Operator (no client!)
     check_batch_dependencies = BigQueryInsertJobOperator(
         task_id='check_batch_dependencies',
+        # configuration={},
         configuration={
             'query': {
                 'query': f"""
