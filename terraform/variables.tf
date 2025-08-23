@@ -39,6 +39,12 @@ variable "domain" {
   default     = "member"
 }
 
+variable "supported_domains" {
+  description = "List of supported business domains"
+  type        = list(string)
+  default     = ["member", "order", "product"]
+}
+
 # Secret Manager variables
 variable "aws_s3_access_key_id" {
   description = "AWS S3 Access Key ID"

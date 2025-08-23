@@ -41,10 +41,10 @@ def create_batch_dag(domain: str):
             'mode': 'batch',
             'batch_window_hours': 1,
             'processing_timestamp': context['execution_date'].isoformat(),
-            'source_table': f"{Variable.get('gcp_project_id')}.{domain}_staging.batch_input",
-            'output_table': f"{Variable.get('gcp_project_id')}.{domain}_raw.batch_processed",
-            'temp_location': f"gs://dataflow-temp/{domain}/batch/{{ ds }}",
-            'staging_location': f"gs://dataflow-staging/{domain}/batch/{{ ds }}"
+            'source_table': f"{Variable.get('gcp_project_id')}.staging_data.{domain}_batch_input",
+            'output_table': f"{Variable.get('gcp_project_id')}.raw_data.{domain}_batch_processed",
+            'temp_location': f"gs://{Variable.get('gcp_project_id')}-dataflow-temp/{domain}/batch/{{ ds }}",
+            'staging_location': f"gs://{Variable.get('gcp_project_id')}-dataflow-staging/{domain}/batch/{{ ds }}"
         }
         return config
     
@@ -58,7 +58,7 @@ def create_batch_dag(domain: str):
     # ✅ Run batch processing using hybrid_pipeline.py with Native I/O
     run_batch_dataflow = DataflowCreatePythonJobOperator(
         task_id='run_batch_dataflow',
-        py_file='gs://dataflow-templates/hybrid_pipeline.py',  # ✅ Use current version with Native I/O
+        py_file='gs://{{{{ var.value.gcp_project_id }}}}-dataflow-templates/hybrid_pipeline.py',  # ✅ Use current version with Native I/O
         job_name=f"batch-{domain}-{{{{ ds_nodash }}}}",
         options={
             # ✅ Mode parameter - same code, different behavior
@@ -68,9 +68,9 @@ def create_batch_dag(domain: str):
             'enable_windowing': True,
             
             # Pipeline configuration
-            'config_path': f'gs://pipeline-configs/{domain}/config.yaml',
-            'temp_location': f'gs://dataflow-temp/{domain}/batch/{{{{ ds }}}}',
-            'staging_location': f'gs://dataflow-staging/{domain}/batch/{{{{ ds }}}}',
+            'config_path': f'gs://{Variable.get("gcp_project_id")}-pipeline-configs/{domain}/config.yaml',
+            'temp_location': f'gs://{Variable.get("gcp_project_id")}-dataflow-temp/{domain}/batch/{{{{ ds }}}}',
+            'staging_location': f'gs://{Variable.get("gcp_project_id")}-dataflow-staging/{domain}/batch/{{{{ ds }}}}',
             
             # Dataflow runner settings
             'runner': 'DataflowRunner',
@@ -116,14 +116,14 @@ def create_batch_dag(domain: str):
                         MAX(_processing_timestamp) as latest_processed,
                         CURRENT_TIMESTAMP() as validation_timestamp,
                         '{{{{ ds }}}}' as processing_date
-                    FROM `{{{{ var.value.gcp_project_id }}}}.{domain}_raw.batch_processed`
+                    FROM `{{{{ var.value.gcp_project_id }}}}.raw_data.{domain}_batch_processed`
                     WHERE DATE(_processing_timestamp) = '{{{{ ds }}}}'
                 """,
                 'useLegacySql': False,
                 'destinationTable': {
                     'projectId': '{{ var.value.gcp_project_id }}',
-                    'datasetId': f'{domain}_monitoring',
-                    'tableId': 'batch_validation_results'
+                    'datasetId': 'monitoring_data',
+                    'tableId': f'{domain}_batch_validation_results'
                 },
                 'writeDisposition': 'WRITE_APPEND',
                 'createDisposition': 'CREATE_IF_NEEDED'
@@ -145,7 +145,7 @@ def create_batch_dag(domain: str):
                             COUNT(CASE WHEN member_id IS NULL THEN 1 END) as null_member_ids,
                             COUNT(CASE WHEN _processing_timestamp IS NULL THEN 1 END) as null_timestamps,
                             AVG(CASE WHEN amount IS NOT NULL THEN amount END) as avg_amount
-                        FROM `{{{{ var.value.gcp_project_id }}}}.{domain}_raw.batch_processed`
+                        FROM `{{{{ var.value.gcp_project_id }}}}.raw_data.{domain}_batch_processed`
                         WHERE DATE(_processing_timestamp) = '{{{{ ds }}}}'
                     )
                     SELECT 
@@ -163,8 +163,8 @@ def create_batch_dag(domain: str):
                 'useLegacySql': False,
                 'destinationTable': {
                     'projectId': '{{ var.value.gcp_project_id }}',
-                    'datasetId': f'{domain}_monitoring',
-                    'tableId': 'data_quality_results'
+                    'datasetId': 'monitoring_data',
+                    'tableId': f'{domain}_data_quality_results'
                 },
                 'writeDisposition': 'WRITE_APPEND',
                 'createDisposition': 'CREATE_IF_NEEDED'

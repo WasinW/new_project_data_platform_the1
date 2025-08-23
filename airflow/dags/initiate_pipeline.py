@@ -92,7 +92,7 @@ def create_initiate_dag(domain: str, tables: list):
             task_id=f'copy_{table}_s3_to_gcs',
             bucket='{{ task_instance.xcom_pull(task_ids="get_s3_bucket_name") }}',
             prefix=f'{domain}/{table}/',
-            dest_gcs=f'gs://gcs-staging-{domain}/{table}/',
+            dest_gcs=f'gs://{{{{ var.value.gcp_project_id }}}}-gcs-staging/{domain}/{table}/',
             aws_conn_id='aws_s3_connection',
             gcp_conn_id='google_cloud_default',
             replace=True,
@@ -110,7 +110,7 @@ def create_initiate_dag(domain: str, tables: list):
                 },
                 'externalDataConfiguration': {
                     'sourceFormat': 'PARQUET',
-                    'sourceUris': [f'gs://gcs-staging-{domain}/{table}/*'],
+                    'sourceUris': [f'gs://{{{{ var.value.gcp_project_id }}}}-gcs-staging/{domain}/{table}/*'],
                     'autodetect': True
                 }
             },
@@ -123,13 +123,13 @@ def create_initiate_dag(domain: str, tables: list):
             configuration={
                 'query': {
                     'query': f"""
-                        CREATE OR REPLACE TABLE `{{{{ var.value.gcp_project_id }}}}.{domain}_raw.{table}` AS
+                        CREATE OR REPLACE TABLE `{{{{ var.value.gcp_project_id }}}}.raw_data.{domain}_{table}` AS
                         SELECT 
                             *,
                             CURRENT_TIMESTAMP() as _ingestion_timestamp,
                             'initiate_pipeline' as _source_pipeline,
                             '{{{{ ds }}}}' as _ingestion_date
-                        FROM `{{{{ var.value.gcp_project_id }}}}.{domain}_staging.{table}_external`
+                        FROM `{{{{ var.value.gcp_project_id }}}}.staging_data.{domain}_{table}_external`
                     """,
                     'useLegacySql': False
                 }

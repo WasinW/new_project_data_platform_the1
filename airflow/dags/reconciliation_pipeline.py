@@ -153,7 +153,7 @@ def create_reconciliation_dag(domain: str, tables: list):
                                 '{domain}' as domain
                                 
                             FROM `{{{{ var.value.gcp_project_id }}}}.{domain}_reconcile_temp.{table}_s3` s3
-                            FULL OUTER JOIN `{{{{ var.value.gcp_project_id }}}}.{domain}_raw.{table}` bq
+                            FULL OUTER JOIN `{{{{ var.value.gcp_project_id }}}}.raw_data.{domain}_{table}` bq
                                 ON s3.id = bq.id
                         ),
                         
@@ -207,7 +207,7 @@ def create_reconciliation_dag(domain: str, tables: list):
                                 'MATCH' as reconciliation_status,
                                 (
                                     SELECT COUNT(*) 
-                                    FROM `{{{{ var.value.gcp_project_id }}}}.{domain}_raw.{table}` bq
+                                    FROM `{{{{ var.value.gcp_project_id }}}}.raw_data.{domain}_{table}` bq
                                     INNER JOIN `{{{{ var.value.gcp_project_id }}}}.{domain}_reconcile_temp.{table}_s3` s3
                                         ON bq.id = s3.id 
                                         AND bq.name = s3.name 

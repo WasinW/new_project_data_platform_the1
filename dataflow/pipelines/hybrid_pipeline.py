@@ -138,8 +138,8 @@ class HybridPipeline:
         # In production, load from GCS using pipeline options
         return {
             'realtime': {
-                'pubsub_subscription': f'projects/{self.options.project}/subscriptions/{self.options.domain}-events-sub',
-                'output_table': f'{self.options.project}.{self.options.domain}_raw.events',
+                'pubsub_subscription': f'projects/{self.options.project}/subscriptions/data-events-{self.options.domain}-sub',
+                'output_table': f'{self.options.project}.raw_data.{self.options.domain}_events',
                 'error_table': f'{self.options.project}.{self.options.domain}_errors.processing_errors',
                 'windowing': {
                     'type': 'fixed',
@@ -148,8 +148,8 @@ class HybridPipeline:
                 }
             },
             'batch': {
-                'source_table': f'{self.options.project}.{self.options.domain}_staging.batch_input',
-                'output_table': f'{self.options.project}.{self.options.domain}_raw.batch_processed',
+                'source_table': f'{self.options.project}.staging_data.{self.options.domain}_batch_input',
+                'output_table': f'{self.options.project}.raw_data.{self.options.domain}_batch_processed',
                 'window_hours': self.options.batch_window_hours
             },
             'dependencies': {
@@ -316,12 +316,12 @@ def run():
     pipeline_options = PipelineOptions()
     hybrid_options = pipeline_options.view_as(HybridPipelineOptions)
     
+    # Initialize pipeline
+    hybrid_pipeline = HybridPipeline(hybrid_options)
+    
     # Set streaming mode for realtime
     if hybrid_options.mode == 'realtime':
         pipeline_options.view_as(StandardOptions).streaming = True
-    
-    # Initialize pipeline
-    hybrid_pipeline = HybridPipeline(hybrid_options)
     
     # Run appropriate pipeline mode
     with beam.Pipeline(options=pipeline_options) as pipeline:

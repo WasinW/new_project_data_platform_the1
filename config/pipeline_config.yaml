@@ -1,4 +1,4 @@
-# config/pipeline_config.yaml
+# config/pipeline_config.yaml - Shared Infrastructure Configuration
 project: ${GCP_PROJECT_ID:ntt-test-data-bq-looker}
 region: ${GCP_REGION:asia-southeast1}
 domain: ${DOMAIN:member}
@@ -11,14 +11,18 @@ source:
   dataset: ${SOURCE_DATASET:refined_data}
   table: ${SOURCE_TABLE:personas}
 
-# Target Datasets
+# Shared Target Datasets (Common for all domains)
 target_datasets:
-  raw: ${DOMAIN}_raw
-  structure: ${DOMAIN}_structure
-  refined: ${DOMAIN}_refined
-  analytics: ${DOMAIN}_analytics
+  raw: raw_data
+  staging: staging_data
+  refined: refined_data
+  analytics: analytics_data
+  audit: audit_logs
+  reconcile: reconcile_temp
+  batch_control: batch_control
+  reference: reference_data
 
-# Secret Manager Configuration
+# Secret Manager Configuration (Shared)
 secrets:
   s3_credentials:
     aws_access_key_id: projects/${GCP_PROJECT_ID}/secrets/aws-s3-access-key-id/versions/latest
@@ -28,24 +32,38 @@ secrets:
   bigquery_credentials:
     service_account_key: projects/${GCP_PROJECT_ID}/secrets/bq-service-account-key/versions/latest
 
-# Pub/Sub Configuration (for realtime mode)
+# Pub/Sub Configuration (Shared topics with domain attributes)
 pubsub:
-  subscription: projects/${GCP_PROJECT_ID}/subscriptions/${DOMAIN}-events-sub
-  create_subscription: projects/${GCP_PROJECT_ID}/topics/${DOMAIN}-events-create
-  update_subscription: projects/${GCP_PROJECT_ID}/topics/${DOMAIN}-events-update
+  subscription: projects/${GCP_PROJECT_ID}/subscriptions/data-events-processor-sub
+  create_topic: projects/${GCP_PROJECT_ID}/topics/data-events-create
+  update_topic: projects/${GCP_PROJECT_ID}/topics/data-events-update
+  delete_topic: projects/${GCP_PROJECT_ID}/topics/data-events-delete
+  dlq_topic: projects/${GCP_PROJECT_ID}/topics/data-events-dlq
 
-# Distribution Mapping - defines which columns go to which tables
+# Storage Configuration (Shared buckets with domain paths)
+storage:
+  staging_bucket: ${GCP_PROJECT_ID}-staging
+  raw_bucket: ${GCP_PROJECT_ID}-raw
+  temp_bucket: ${GCP_PROJECT_ID}-dataflow-temp
+  config_bucket: ${GCP_PROJECT_ID}-pipeline-configs
+  # Domain-specific paths within shared buckets
+  domain_paths:
+    staging: staging/${DOMAIN}/
+    raw: raw/${DOMAIN}/
+    processed: processed/${DOMAIN}/
+
+# Distribution Mapping - defines which columns go to which tables (with domain prefix)
 distribution_mapping:
-  raw_a1: [ member_id, member_name, member_status ]
-  raw_a2: [ member_id, email, phone ]
-  raw_a3: [ member_id, email, address ]
-  refined_b1: [ member_id, member_name, member_status, created_date, email, phone ]
-  refined_b2: [ member_id, member_name, member_status, created_date ]
-  refined_c1: [ member_id, member_name, member_status, created_date, email, phone, address ]
+  ${DOMAIN}_raw_a1: [ member_id, member_name, member_status ]
+  ${DOMAIN}_raw_a2: [ member_id, email, phone ]
+  ${DOMAIN}_raw_a3: [ member_id, email, address ]
+  ${DOMAIN}_refined_b1: [ member_id, member_name, member_status, created_date, email, phone ]
+  ${DOMAIN}_refined_b2: [ member_id, member_name, member_status, created_date ]
+  ${DOMAIN}_refined_c1: [ member_id, member_name, member_status, created_date, email, phone, address ]
 
-# Column Mappings - how to transform column names and values
+# Column Mappings - how to transform column names and values (with domain prefix)
 column_mappings:
-  raw_a1:
+  ${DOMAIN}_raw_a1:
     member_id: member_id
     member_name: member_name
     member_status: member_status
@@ -53,7 +71,7 @@ column_mappings:
       type: constant
       value: "{{ current_timestamp }}"
 
-  raw_a2:
+  ${DOMAIN}_raw_a2:
     member_id: member_id
     email: e
     phone: f
@@ -61,7 +79,7 @@ column_mappings:
       type: expression
       expression: "'email' if element.get('e') else 'phone'"
 
-  raw_a3:
+  ${DOMAIN}_raw_a3:
     member_id: member_id
     email: e
     address: g
@@ -70,7 +88,7 @@ column_mappings:
       columns: [ e, g ]
       separator: " | "
 
-  refined_b1:
+  ${DOMAIN}_refined_b1:
     member_id: member_id
     member_name: member_name
     member_status: member_status
@@ -81,7 +99,7 @@ column_mappings:
       type: constant
       value: "{{ processing_timestamp }}"
 
-  refined_b2:
+  ${DOMAIN}_refined_b2:
     member_id: member_id
     member_name: member_name
     member_status: member_status
@@ -97,7 +115,7 @@ column_mappings:
       type: expression
       expression: "1 if element.get('c') == 'active' else 0"
 
-  refined_c1:
+  ${DOMAIN}_refined_c1:
     member_id: member_id
     member_name: member_name
     member_status: member_status

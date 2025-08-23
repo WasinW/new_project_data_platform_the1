@@ -95,21 +95,21 @@ resource "google_secret_manager_secret_version" "bq_service_account_key" {
   })
 }
 
-# Dataplex Lake
+# Dataplex Lake (Single shared lake for all domains)
 resource "google_dataplex_lake" "data_lake" {
   location     = var.region
-  name         = "${var.domain}-data-lake"
-  description  = "Data lake for ${var.domain} domain"
-  display_name = "${title(var.domain)} Data Lake"
+  name         = "data-platform-lake"
+  description  = "Centralized data lake for all business domains"
+  display_name = "Data Platform Lake"
 
   labels = {
     environment = var.environment
-    domain      = var.domain
     created_by  = "terraform"
+    purpose     = "multi-domain-data-lake"
   }
 }
 
-# Dataplex Zone - Raw
+# Dataplex Zone - Raw (Shared)
 resource "google_dataplex_zone" "raw_zone" {
   discovery_spec {
     enabled = true
@@ -117,25 +117,24 @@ resource "google_dataplex_zone" "raw_zone" {
 
   lake     = google_dataplex_lake.data_lake.name
   location = var.region
-  name     = "${var.domain}-raw-zone"
+  name     = "raw-zone"
 
   resource_spec {
     location_type = "SINGLE_REGION"
   }
 
   type         = "RAW"
-  description  = "Raw data zone for ${var.domain} domain"
-  display_name = "${title(var.domain)} Raw Data Zone"
+  description  = "Raw data zone for all domains"
+  display_name = "Raw Data Zone"
 
   labels = {
     environment = var.environment
-    domain      = var.domain
     zone_type   = "raw"
     created_by  = "terraform"
   }
 }
 
-# Dataplex Zone - Refined
+# Dataplex Zone - Refined (Shared)
 resource "google_dataplex_zone" "refined_zone" {
   discovery_spec {
     enabled = true
@@ -143,25 +142,24 @@ resource "google_dataplex_zone" "refined_zone" {
 
   lake     = google_dataplex_lake.data_lake.name
   location = var.region
-  name     = "${var.domain}-refined-zone"
+  name     = "refined-zone"
 
   resource_spec {
     location_type = "SINGLE_REGION"
   }
 
   type         = "CURATED"
-  description  = "Refined data zone for ${var.domain} domain"
-  display_name = "${title(var.domain)} Refined Data Zone"
+  description  = "Refined data zone for all domains"
+  display_name = "Refined Data Zone"
 
   labels = {
     environment = var.environment
-    domain      = var.domain
     zone_type   = "refined"
     created_by  = "terraform"
   }
 }
 
-# Dataplex Zone - Analytics
+# Dataplex Zone - Analytics (Shared)
 resource "google_dataplex_zone" "analytics_zone" {
   discovery_spec {
     enabled = true
@@ -169,29 +167,28 @@ resource "google_dataplex_zone" "analytics_zone" {
 
   lake     = google_dataplex_lake.data_lake.name
   location = var.region
-  name     = "${var.domain}-analytics-zone"
+  name     = "analytics-zone"
 
   resource_spec {
     location_type = "SINGLE_REGION"
   }
 
   type         = "CURATED"
-  description  = "Analytics data zone for ${var.domain} domain"
-  display_name = "${title(var.domain)} Analytics Data Zone"
+  description  = "Analytics data zone for all domains"
+  display_name = "Analytics Data Zone"
 
   labels = {
     environment = var.environment
-    domain      = var.domain
     zone_type   = "analytics"
     created_by  = "terraform"
   }
 }
 
-# Dataplex Assets for BigQuery datasets
+# Dataplex Assets for BigQuery datasets (Shared datasets)
 
 # Raw data asset
 resource "google_dataplex_asset" "raw_dataset_asset" {
-  name         = "${var.domain}-raw-dataset"
+  name         = "raw-data-asset"
   location     = var.region
   
   lake = google_dataplex_lake.data_lake.name
@@ -202,27 +199,26 @@ resource "google_dataplex_asset" "raw_dataset_asset" {
   }
 
   resource_spec {
-    name = "projects/${var.project_id}/datasets/${var.domain}_raw"
+    name = "projects/${var.project_id}/datasets/raw_data"
     type = "BIGQUERY_DATASET"
   }
 
-  display_name = "${title(var.domain)} Raw Dataset"
-  description  = "BigQuery dataset containing raw data for ${var.domain}"
+  display_name = "Raw Data Dataset"
+  description  = "Shared BigQuery dataset containing raw data for all domains"
 
   labels = {
     environment  = var.environment
-    domain       = var.domain
     asset_type   = "bigquery_dataset"
     data_layer   = "raw"
     created_by   = "terraform"
   }
 
-  depends_on = [google_bigquery_dataset.raw_dataset]
+  depends_on = [google_bigquery_dataset.datasets]
 }
 
 # Refined data asset
 resource "google_dataplex_asset" "refined_dataset_asset" {
-  name         = "${var.domain}-refined-dataset"
+  name         = "refined-data-asset"
   location     = var.region
   
   lake = google_dataplex_lake.data_lake.name
@@ -233,22 +229,21 @@ resource "google_dataplex_asset" "refined_dataset_asset" {
   }
 
   resource_spec {
-    name = "projects/${var.project_id}/datasets/${var.domain}_refined"
+    name = "projects/${var.project_id}/datasets/refined_data"
     type = "BIGQUERY_DATASET"
   }
 
-  display_name = "${title(var.domain)} Refined Dataset"
-  description  = "BigQuery dataset containing refined data for ${var.domain}"
+  display_name = "Refined Data Dataset"
+  description  = "Shared BigQuery dataset containing refined data for all domains"
 
   labels = {
     environment  = var.environment
-    domain       = var.domain
     asset_type   = "bigquery_dataset"
     data_layer   = "refined"
     created_by   = "terraform"
   }
 
-  depends_on = [google_bigquery_dataset.refined_dataset]
+  depends_on = [google_bigquery_dataset.datasets]
 }
 
 # Analytics data asset

@@ -11,30 +11,71 @@
   "dataflow_subnetwork": "projects/your-gcp-project-id/regions/asia-southeast1/subnetworks/default",
   "dataflow_service_account": "dataflow-sa@your-gcp-project-id.iam.gserviceaccount.com",
   
+  "shared_infrastructure": {
+    "datasets": {
+      "raw": "raw_data",
+      "staging": "staging_data",
+      "refined": "refined_data",
+      "analytics": "analytics_data",
+      "audit": "audit_logs",
+      "reconcile": "reconcile_temp",
+      "batch_control": "batch_control",
+      "reference": "reference_data"
+    },
+    "storage": {
+      "staging_bucket": "your-gcp-project-id-staging",
+      "raw_bucket": "your-gcp-project-id-raw",
+      "temp_bucket": "your-gcp-project-id-dataflow-temp",
+      "config_bucket": "your-gcp-project-id-pipeline-configs",
+      "template_bucket": "your-gcp-project-id-dataflow-templates"
+    },
+    "pubsub": {
+      "create_topic": "data-events-create",
+      "update_topic": "data-events-update", 
+      "delete_topic": "data-events-delete",
+      "dlq_topic": "data-events-dlq",
+      "processor_subscription": "data-events-processor-sub"
+    },
+    "dataplex": {
+      "lake": "data-platform-lake",
+      "raw_zone": "raw-zone",
+      "refined_zone": "refined-zone",
+      "analytics_zone": "analytics-zone"
+    },
+    "composer": {
+      "environment": "data-platform-composer"
+    }
+  },
+  
   "domains_config": {
     "member": {
       "tables": ["s_loy_program", "s_org_ext", "s_loy_tier", "s_loy_member"],
       "enabled": true,
-      "config_path": "gs://pipeline-configs/member/config.yaml"
+      "config_path": "gs://your-gcp-project-id-pipeline-configs/member/config.yaml",
+      "storage_subfolder": "member/"
     },
     "order": {
       "tables": ["order_header", "order_detail", "payment"],
       "enabled": true,
-      "config_path": "gs://pipeline-configs/order/config.yaml"
+      "config_path": "gs://your-gcp-project-id-pipeline-configs/order/config.yaml",
+      "storage_subfolder": "order/"
     },
     "product": {
       "tables": ["product_master", "product_category", "inventory"],
       "enabled": false,
-      "config_path": "gs://pipeline-configs/product/config.yaml"
+      "config_path": "gs://your-gcp-project-id-pipeline-configs/product/config.yaml",
+      "storage_subfolder": "product/"
     }
   },
 
   "windowing_config": {
-    "member_windowing_enabled": "true",
-    "order_windowing_enabled": "true",
-    "product_windowing_enabled": "false",
     "global_windowing_enabled": "true",
-    "windowing_monitoring_enabled": "true"
+    "windowing_monitoring_enabled": "true",
+    "domain_specific_settings": {
+      "member": { "windowing_enabled": "true" },
+      "order": { "windowing_enabled": "true" },
+      "product": { "windowing_enabled": "false" }
+    }
   },
 
   "batch_domains": ["member", "order"],
@@ -66,10 +107,10 @@
   },
   
   "storage_config": {
-    "temp_location": "gs://dataflow-temp",
-    "staging_location": "gs://dataflow-staging",
-    "config_bucket": "pipeline-configs",
-    "template_bucket": "dataflow-templates"
+    "temp_location": "gs://your-gcp-project-id-dataflow-temp",
+    "staging_location": "gs://your-gcp-project-id-dataflow-staging",
+    "config_bucket": "your-gcp-project-id-pipeline-configs",
+    "template_bucket": "your-gcp-project-id-dataflow-templates"
   },
   
   "security": {

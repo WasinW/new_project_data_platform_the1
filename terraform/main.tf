@@ -41,14 +41,16 @@ resource "google_project_service" "apis" {
   disable_dependent_services = true
 }
 
-# Storage buckets for pipeline
+# Storage buckets for pipeline (Shared across all domains)
 resource "google_storage_bucket" "pipeline_buckets" {
   for_each = toset([
     "dataflow-temp",
     "dataflow-staging", 
     "pipeline-configs",
     "dataflow-templates",
-    "gcs-staging-${var.primary_domain}"
+    "staging",
+    "raw",
+    "data-lake"
   ])
   
   name          = "${var.project_id}-${each.value}"
@@ -73,22 +75,33 @@ resource "google_storage_bucket" "pipeline_buckets" {
   depends_on = [google_project_service.apis]
 }
 
-# BigQuery datasets
+# Create domain subfolders in shared buckets
+resource "google_storage_bucket_object" "domain_folders" {
+  for_each = toset([
+    for combo in setproduct(["staging", "raw"], var.supported_domains) : "${combo[0]}/${combo[1]}/"
+  ])
+  
+  name   = each.value
+  bucket = google_storage_bucket.pipeline_buckets[split("/", each.value)[0]].name
+  content = " "  # Empty content, just creates the folder structure
+}
+
+# BigQuery datasets (Shared across all domains)
 resource "google_bigquery_dataset" "datasets" {
   for_each = toset([
-    "${var.primary_domain}_raw",
-    "${var.primary_domain}_staging", 
-    "${var.primary_domain}_refined",
-    "${var.primary_domain}_analytics",
-    "${var.primary_domain}_audit",
-    "${var.primary_domain}_reconcile_temp",
+    "raw_data",
+    "staging_data", 
+    "refined_data",
+    "analytics_data",
+    "audit_logs",
+    "reconcile_temp",
     "batch_control",
     "reference_data"
   ])
   
   dataset_id    = each.value
-  friendly_name = "Dataset for ${each.value}"
-  description   = "Dataset for ${var.primary_domain} domain - ${each.value} layer"
+  friendly_name = "Shared dataset for ${each.value}"
+  description   = "Shared dataset for all domains - ${each.value} layer"
   location      = var.region
   
   default_table_expiration_ms = var.environment == "prod" ? null : 7776000000 # 90 days for non-prod
@@ -111,12 +124,13 @@ resource "google_bigquery_dataset" "datasets" {
   depends_on = [google_project_service.apis]
 }
 
-# Pub/Sub topics and subscriptions
+# Pub/Sub topics and subscriptions (Shared across all domains)
 resource "google_pubsub_topic" "pipeline_topics" {
   for_each = toset([
-    "${var.primary_domain}-events-create",
-    "${var.primary_domain}-events-update",
-    "${var.primary_domain}-events-delete"
+    "data-events-create",
+    "data-events-update",
+    "data-events-delete",
+    "data-events-dlq"
   ])
   
   name = each.value
@@ -127,10 +141,12 @@ resource "google_pubsub_topic" "pipeline_topics" {
 }
 
 resource "google_pubsub_subscription" "pipeline_subscriptions" {
-  for_each = google_pubsub_topic.pipeline_topics
+  for_each = toset([
+    "data-events-processor-sub"
+  ])
   
-  name  = "${each.value.name}-sub"
-  topic = each.value.name
+  name  = each.value
+  topic = google_pubsub_topic.pipeline_topics["data-events-create"].name
   
   message_retention_duration = "1200s" # 20 minutes
   retain_acked_messages      = false
@@ -152,22 +168,22 @@ resource "google_pubsub_subscription" "pipeline_subscriptions" {
 }
 
 resource "google_pubsub_topic" "dead_letter" {
-  name = "${var.primary_domain}-dead-letter"
+  name = "data-dead-letter"
   
   depends_on = [google_project_service.apis]
 }
 
-# Service account for Dataflow
+# Service account for Dataflow (Shared)
 resource "google_service_account" "dataflow_sa" {
   account_id   = "dataflow-sa"
-  display_name = "Dataflow Service Account"
-  description  = "Service account for Dataflow pipelines"
+  display_name = "Dataflow Service Account" 
+  description  = "Shared service account for all Dataflow pipelines"
 }
 
 resource "google_project_iam_member" "dataflow_permissions" {
   for_each = toset([
     "roles/dataflow.worker",
-    "roles/bigquery.dataEditor",
+    "roles/bigquery.dataEditor", 
     "roles/bigquery.jobUser",
     "roles/storage.objectAdmin",
     "roles/pubsub.subscriber",
@@ -179,9 +195,9 @@ resource "google_project_iam_member" "dataflow_permissions" {
   member  = "serviceAccount:${google_service_account.dataflow_sa.email}"
 }
 
-# Cloud Composer environment
+# Cloud Composer environment (Shared for all domains)
 resource "google_composer_environment" "composer" {
-  name   = "${var.primary_domain}-composer-${var.environment}"
+  name   = "data-platform-composer-${var.environment}"
   region = var.region
   
   config {

@@ -56,7 +56,7 @@ def create_realtime_dag(domain: str):
                         AND status = 'COMPLETED'
                         AND DATE(completion_time) = CURRENT_DATE()
                     )
-                    INSERT INTO `{{{{ var.value.gcp_project_id }}}}.{domain}_monitoring.dependency_checks`
+                    INSERT INTO `{{{{ var.value.gcp_project_id }}}}.monitoring_data.{domain}_dependency_checks`
                     SELECT 
                         *,
                         '{domain}' as domain,
@@ -76,11 +76,11 @@ def create_realtime_dag(domain: str):
             'mode': 'realtime',
             'domain': domain,
             'enable_windowing': True,
-            'pubsub_subscription': f'projects/{{{{ var.value.gcp_project_id }}}}/subscriptions/{domain}-events-sub',
-            'output_table': f'{{{{ var.value.gcp_project_id }}}}.{domain}_raw.realtime_events',
-            'error_table': f'{{{{ var.value.gcp_project_id }}}}.{domain}_errors.processing_errors',
-            'temp_location': f'gs://dataflow-temp/{domain}/realtime',
-            'staging_location': f'gs://dataflow-staging/{domain}/realtime',
+            'pubsub_subscription': f'projects/{{{{ var.value.gcp_project_id }}}}/subscriptions/data-events-{domain}-sub',
+            'output_table': f'{{{{ var.value.gcp_project_id }}}}.raw_data.{domain}_realtime_events',
+            'error_table': f'{{{{ var.value.gcp_project_id }}}}.monitoring_data.{domain}_processing_errors',
+            'temp_location': f'gs://{{{{ var.value.gcp_project_id }}}}-dataflow-temp/{domain}/realtime',
+            'staging_location': f'gs://{{{{ var.value.gcp_project_id }}}}-dataflow-staging/{domain}/realtime',
             'window_duration_seconds': 300,  # 5 minutes
             'allowed_lateness_seconds': 60
         }
@@ -96,7 +96,7 @@ def create_realtime_dag(domain: str):
     # ✅ Start realtime Dataflow job using hybrid_pipeline.py with Native I/O
     start_realtime_dataflow = DataflowCreatePythonJobOperator(
         task_id='start_realtime_dataflow',
-        py_file='gs://dataflow-templates/hybrid_pipeline.py',  # ✅ Use current version with Native I/O
+        py_file='gs://{{{{ var.value.gcp_project_id }}}}-dataflow-templates/hybrid_pipeline.py',  # ✅ Use current version with Native I/O
         job_name=f"realtime-{domain}-{{{{ ts_nodash }}}}",
         options={
             # ✅ Mode parameter - realtime processing
@@ -105,9 +105,9 @@ def create_realtime_dag(domain: str):
             'enable_windowing': True,
             
             # Pipeline configuration
-            'config_path': f'gs://pipeline-configs/{domain}/config.yaml',
-            'temp_location': f'gs://dataflow-temp/{domain}/realtime',
-            'staging_location': f'gs://dataflow-staging/{domain}/realtime',
+            'config_path': f'gs://{{{{ var.value.gcp_project_id }}}}-pipeline-configs/{domain}/config.yaml',
+            'temp_location': f'gs://{{{{ var.value.gcp_project_id }}}}-dataflow-temp/{domain}/realtime',
+            'staging_location': f'gs://{{{{ var.value.gcp_project_id }}}}-dataflow-staging/{domain}/realtime',
             
             # Dataflow runner settings
             'runner': 'DataflowRunner',
@@ -158,7 +158,7 @@ def create_realtime_dag(domain: str):
                             AVG(TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), TIMESTAMP(_processing_timestamp), SECOND)) as avg_processing_delay_seconds,
                             COUNT(CASE WHEN _processing_timestamp IS NULL THEN 1 END) as null_timestamp_count,
                             MAX(_processing_timestamp) as latest_processed_event
-                        FROM `{{{{ var.value.gcp_project_id }}}}.{domain}_raw.realtime_events`
+                        FROM `{{{{ var.value.gcp_project_id }}}}.raw_data.{domain}_realtime_events`
                         WHERE _processing_timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 1 HOUR)
                     ),
                     
@@ -170,7 +170,7 @@ def create_realtime_dag(domain: str):
                         WHERE timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 1 HOUR)
                     )
                     
-                    INSERT INTO `{{{{ var.value.gcp_project_id }}}}.{domain}_monitoring.realtime_health`
+                    INSERT INTO `{{{{ var.value.gcp_project_id }}}}.monitoring_data.{domain}_realtime_health`
                     SELECT 
                         h.*,
                         e.errors_last_hour,
@@ -208,12 +208,12 @@ def create_realtime_dag(domain: str):
                                 WHEN health_status = 'WARNING' AND errors_last_hour > events_processed_last_hour * 0.05 THEN 'High error rate detected'
                                 ELSE NULL
                             END as alert_message
-                        FROM `{{{{ var.value.gcp_project_id }}}}.{domain}_monitoring.realtime_health`
+                        FROM `{{{{ var.value.gcp_project_id }}}}.monitoring_data.{domain}_realtime_health`
                         WHERE check_timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 5 MINUTE)
                         AND health_status IN ('CRITICAL', 'WARNING')
                     )
                     
-                    INSERT INTO `{{{{ var.value.gcp_project_id }}}}.{domain}_monitoring.pipeline_alerts`
+                    INSERT INTO `{{{{ var.value.gcp_project_id }}}}.monitoring_data.{domain}_pipeline_alerts`
                     SELECT 
                         domain,
                         pipeline_type,
