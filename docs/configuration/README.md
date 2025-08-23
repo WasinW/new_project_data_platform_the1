@@ -1,53 +1,78 @@
-# Configuration Guide
+# Shared Infrastructure Configuration Guide
 
 ## 📖 Overview
-This guide explains how to configure the data platform project using the centralized parameters system. All configuration is managed through a single parameters file that gets automatically applied to all components.
+This guide explains how to configure the **shared infrastructure data platform** using centralized parameters. The platform uses **shared GCP resources** with **domain-specific data isolation** through table prefixes and subfolders.
 
 ---
 
-## 🎯 Configuration Philosophy
+## �️ Shared Infrastructure Philosophy
 
-### Single Source of Truth
-- **One File**: All parameters in `docs/configuration/parameters.conf`
-- **Auto-Replacement**: Automated substitution across all project files
-- **Environment-Aware**: Support for dev/staging/production configurations
-- **Validation**: Built-in parameter validation and checking
+### **Shared Resources** (Cost-Optimized)
+- **Single datasets**: `raw_data`, `staging_data`, `monitoring_data`
+- **Single buckets**: `{project}-dataflow-temp`, `{project}-gcs-staging`
+- **Single Composer**: `composer-{environment}`
+- **Shared topics**: `data-events-create`, `data-events-update`
+
+### **Domain Isolation** (Data Separation)
+- **Table prefixes**: `{domain}_table_name`
+- **Subfolders**: `/{domain}/` within shared buckets
+- **Domain subscriptions**: `data-events-{domain}-sub`
+- **Domain DAGs**: `{pipeline_type}_{domain}_pipeline`
 
 ### Parameter Naming Convention
 ```bash
-# Category_Type_Specific_Name
+# Shared Infrastructure (no domain prefix)
 PROJECT_ID="your-project-id"
 BIGQUERY_DATASET_RAW="raw_data"
-DATAFLOW_NUM_WORKERS="5"
-PUBSUB_TOPIC_INPUT="input-data-topic"
+STORAGE_BUCKET_STAGING="your-project-gcs-staging"
+PUBSUB_TOPIC_EVENTS="data-events-create"
+
+# Domain-Specific Elements
+DOMAIN="member"
+TABLE_PREFIX="${DOMAIN}_"
+SUBFOLDER_PATTERN="/${DOMAIN}/"
 ```
 
 ---
 
 ## 🔧 Configuration Process
 
-### 1. **Copy Parameters Template**
+### 1. **Setup Shared Infrastructure Parameters**
 ```bash
-# Create your local parameters file
-cp docs/configuration/parameters.conf docs/configuration/parameters.local.conf
+# Copy and edit shared parameters
+cp docs/configuration/parameters.conf.example docs/configuration/parameters.conf
 
-# Edit with your values
-vim docs/configuration/parameters.local.conf
+# Configure shared resources
+PROJECT_ID="your-gcp-project-id"
+REGION="asia-southeast1"
+
+# Shared datasets (no domain prefix)
+BIGQUERY_DATASET_RAW="raw_data"
+BIGQUERY_DATASET_STAGING="staging_data"  
+BIGQUERY_DATASET_MONITORING="monitoring_data"
+
+# Shared buckets (no domain prefix)
+STORAGE_BUCKET_DATAFLOW_TEMP="${PROJECT_ID}-dataflow-temp"
+STORAGE_BUCKET_GCS_STAGING="${PROJECT_ID}-gcs-staging"
+STORAGE_BUCKET_CONFIGS="${PROJECT_ID}-pipeline-configs"
+
+# Shared Composer (no domain prefix)
+COMPOSER_ENVIRONMENT_NAME="composer-${ENVIRONMENT}"
 ```
 
-### 2. **Configure Required Parameters**
+### 2. **Configure Domain-Specific Elements**
 ```bash
-# Essential settings
-PROJECT_ID="your-gcp-project-id"
-REGION="us-central1"
-ORGANIZATION_ID="your-org-id"
-DOMAIN="your-company.com"
+# Domain configuration
+SUPPORTED_DOMAINS="member,order,product"
+DOMAIN="member"  # Current domain being configured
 
-# Service accounts
-DATAFLOW_SERVICE_ACCOUNT_NAME="dataflow-worker-sa"
-AIRFLOW_SERVICE_ACCOUNT_NAME="airflow-scheduler-sa"
+# Domain-specific naming patterns
+TABLE_PREFIX="${DOMAIN}_"
+SUBFOLDER_PATTERN="/${DOMAIN}/"
 
-# Resource names
+# Domain-specific subscriptions
+PUBSUB_SUBSCRIPTION_PATTERN="data-events-${DOMAIN}-sub"
+```
 DATA_LAKE_BUCKET_NAME="your-project-data-lake"
 RAW_DATASET_ID="raw_data"
 INPUT_TOPIC_ID="input-data-topic"

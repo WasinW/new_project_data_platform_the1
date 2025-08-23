@@ -1,13 +1,13 @@
-# Comprehensive Data Pipeline Solution Documentation
+# GCP Data Platform Implementation Guide
 
 ## Executive Summary
 
-This document outlines a complete data pipeline solution for migrating from AWS S3 batch processing to GCP hybrid batch/realtime system. The solution consists of four distinct pipelines orchestrated by Cloud Composer (Airflow), utilizing both pure Airflow operations and Python-based Dataflow jobs that can switch between batch and streaming modes.
+This document outlines a **shared infrastructure data platform** for migrating from AWS S3 to GCP. The solution features **4 specialized pipelines** orchestrated by Cloud Composer (Airflow), with **shared GCP resources** and **domain-specific data isolation**.
 
 ## Table of Contents
 
 1. [Solution Overview](#solution-overview)
-2. [Architecture Design](#architecture-design)
+2. [Shared Infrastructure Design](#shared-infrastructure-design)
 3. [Pipeline Specifications](#pipeline-specifications)
 4. [Implementation Details](#implementation-details)
 5. [Configuration Management](#configuration-management)
@@ -20,20 +20,72 @@ This document outlines a complete data pipeline solution for migrating from AWS 
 
 The solution addresses the need to:
 - Migrate 2TB of initial data from AWS S3 to GCP
-- Process 25GB/day of incremental data
+- Process 25GB/day of incremental data across multiple business domains
 - Support 10+ business domains with 50 tables each
 - Enable seamless transition from batch to realtime processing
 - Maintain data reconciliation with legacy AWS pipeline
 
-### 1.2 Technical Approach
+### 1.2 Shared Infrastructure Approach
 
-Four specialized pipelines:
-1. **Initiate Pipeline**: One-time migration using pure Airflow
-2. **Realtime Pipeline**: Continuous streaming via Dataflow
-3. **Batch Pipeline**: Hourly processing reusing realtime code
-4. **Reconciliation Pipeline**: Daily validation against AWS S3
+**Key Innovation**: All GCP resources are **shared across domains** with data isolation through:
+- **Table prefixes**: `{domain}_table_name`
+- **Subfolders**: `/{domain}/` within shared buckets
+- **Domain-specific DAGs**: `{pipeline_type}_{domain}_pipeline`
 
-## 2. Architecture Design
+**Benefits**:
+- **Cost Optimization**: Single datasets, buckets, Composer environment
+- **Simplified Management**: Centralized infrastructure
+- **Scalability**: Easy addition of new domains
+- **Resource Efficiency**: Shared compute and storage resources
+
+## 2. Shared Infrastructure Design
+
+### 2.1 Resource Naming Convention
+
+**Shared Resources** (No Domain Prefix):
+```
+Datasets:
+- raw_data              # All domain raw tables
+- staging_data          # All domain staging tables  
+- monitoring_data       # All domain monitoring tables
+
+Buckets:
+- {project-id}-dataflow-temp      # Shared Dataflow temp
+- {project-id}-dataflow-staging   # Shared Dataflow staging
+- {project-id}-gcs-staging       # Shared data staging
+- {project-id}-pipeline-configs  # Shared configs
+
+Pub/Sub:
+- data-events-create    # Shared create events topic
+- data-events-update    # Shared update events topic
+- data-events-{domain}-sub  # Domain-specific subscriptions
+
+Composer:
+- composer-{environment}  # Shared Airflow environment
+
+Dataplex:
+- data-lake-main       # Shared data lake
+- zone-raw-data        # Shared raw zone
+- zone-staging-data    # Shared staging zone
+```
+
+**Domain-Specific Elements**:
+```
+Table Names:
+- {domain}_batch_input
+- {domain}_realtime_events
+- {domain}_processing_errors
+
+DAG Names:
+- initiate_{domain}_pipeline
+- realtime_{domain}_pipeline
+- batch_{domain}_pipeline
+- reconciliation_{domain}_pipeline
+
+Subfolders:
+- gs://bucket/{domain}/data/
+- gs://bucket/{domain}/config/
+```
 
 ### 2.1 High-Level Architecture
 
@@ -55,83 +107,114 @@ Four specialized pipelines:
 └──────────────┘ └──────────────┘ └──────────────┘ └──────────────────┘
 ```
 
-### 2.2 Data Flow Architecture
+### 2.2 Shared Infrastructure Data Flow
 
 ```
-Source Systems                Processing Layer              Storage Layer
-┌─────────────┐              ┌──────────────┐            ┌──────────────┐
-│    AWS S3   │─────STS────▶│     GCS      │──External─▶│   BigQuery   │
-│  Snapshots  │              │   Staging    │   Tables   │     Raw      │
-└─────────────┘              └──────────────┘            └──────────────┘
-                                     │                           │
-┌─────────────┐              ┌──────────────┐            ┌──────────────┐
-│   Pub/Sub   │────Stream──▶│   Dataflow   │───Write───▶│   BigQuery   │
-│   Topics    │              │  Processing  │            │   Refined    │
-└─────────────┘              └──────────────┘            └──────────────┘
-                                     │                           │
-┌─────────────┐              ┌──────────────┐            ┌──────────────┐
-│  BigQuery   │────Batch───▶│   Dataflow   │───Write───▶│   BigQuery   │
-│   Source    │              │    Batch     │            │   Analytics  │
-└─────────────┘              └──────────────┘            └──────────────┘
+Source Systems           Shared Processing Layer         Shared Storage Layer
+┌─────────────┐         ┌──────────────────┐           ┌─────────────────┐
+│    AWS S3   │─STS────▶│  Shared GCS      │─External─▶│  Shared BigQuery│
+│  Snapshots  │         │  staging_data    │  Tables   │    raw_data     │
+└─────────────┘         └──────────────────┘           │  staging_data   │
+                               │                        │ monitoring_data │
+┌─────────────┐         ┌──────────────────┐           └─────────────────┘
+│ Shared      │─Stream─▶│ Shared Dataflow  │─Write────▶│   Domain Tables:│
+│ Pub/Sub     │         │   Processing     │           │ - member_events │
+│ Topics      │         │   (hybrid_       │           │ - order_batch   │
+└─────────────┘         │    pipeline.py)  │           │ - product_raw   │
+                        └──────────────────┘           └─────────────────┘
+```
+
+### 2.3 Domain Data Isolation Pattern
+
+```
+Shared Dataset: raw_data
+├── member_batch_input      # Domain: member
+├── member_realtime_events  # Domain: member  
+├── order_batch_input       # Domain: order
+├── order_realtime_events   # Domain: order
+└── product_*               # Domain: product
+
+Shared Bucket: project-gcs-staging
+├── /member/               # Domain subfolder
+│   ├── batch/
+│   └── realtime/
+├── /order/                # Domain subfolder
+└── /product/              # Domain subfolder
 ```
 
 ## 3. Pipeline Specifications
 
 ### 3.1 Initiate Pipeline
 
-**Purpose**: One-time migration of historical data from S3 to BigQuery
+**Purpose**: One-time migration of historical data from S3 to shared BigQuery datasets
 
 **Technology**: Pure Airflow (no Dataflow)
 
+**Shared Infrastructure Usage**:
+- **Source**: AWS S3 → Shared GCS staging bucket
+- **Target**: Shared `staging_data` and `raw_data` datasets
+- **Tables**: Domain-prefixed tables (e.g., `member_historical_data`)
+
 **Steps**:
-1. Create Storage Transfer Service job
-2. Copy data from S3 to GCS staging
-3. Create BigQuery external tables with Iceberg format
-4. Load data from external to native BigQuery tables
-5. Register with Dataplex
-6. Track data lineage
-7. Generate audit logs
+1. Create Storage Transfer Service job for shared staging bucket
+2. Copy data from S3 to shared GCS staging with domain subfolders
+3. Create BigQuery external tables in shared `staging_data` dataset
+4. Load data to domain-prefixed tables in shared `raw_data` dataset
+5. Register with shared Dataplex lake
+6. Track data lineage in shared monitoring dataset
 
 ### 3.2 Realtime Pipeline
 
-**Purpose**: Continuous processing of streaming events
+**Purpose**: Continuous processing of streaming events with shared infrastructure
 
 **Technology**: Airflow (orchestration) + Dataflow (processing)
 
+**Shared Infrastructure Usage**:
+- **Source**: Shared Pub/Sub topics with domain-specific subscriptions
+- **Target**: Domain-prefixed tables in shared datasets
+- **Processing**: Shared Dataflow templates with domain parameters
+
 **Steps**:
-1. Consume messages from Pub/Sub topics (create/update)
-2. Check upstream dependencies
-3. Fetch source data from BigQuery/Bigtable
-4. Distribute to multiple target tables based on mapping
-5. Apply transformations (simple and complex)
-6. Write to native BigQuery tables
-7. Audit logging
+1. Consume from shared topics via domain-specific subscriptions
+2. Process through shared `hybrid_pipeline.py` with domain context
+3. Distribute to domain-prefixed tables in shared datasets
+4. Apply domain-specific transformations
+5. Write to shared `raw_data` and `staging_data` datasets
+6. Audit logging to shared `monitoring_data` dataset
 
 ### 3.3 Batch Pipeline
 
-**Purpose**: Hourly batch processing (temporary until realtime is ready)
+**Purpose**: Hourly batch processing using shared infrastructure
 
-**Technology**: Airflow + Dataflow (same code as realtime)
+**Technology**: Airflow + Dataflow (reuses realtime code)
+
+**Shared Infrastructure Usage**:
+- **Source**: Domain-prefixed tables in shared `staging_data` dataset
+- **Target**: Domain-prefixed tables in shared `raw_data` dataset
+- **Processing**: Same shared Dataflow templates as realtime
 
 **Steps**:
-1. Query source BigQuery for recent changes
-2. Check dependencies
-3. Process through same logic as realtime
-4. Write to target tables
-5. Audit logging
+1. Query domain-specific tables from shared datasets
+2. Process through shared `hybrid_pipeline.py` in batch mode
+3. Write to domain-prefixed target tables in shared datasets
+4. Validation through shared monitoring dataset
 
 ### 3.4 Reconciliation Pipeline
 
-**Purpose**: Daily validation against AWS S3 reference data
+**Purpose**: Daily validation against AWS S3 using shared infrastructure
 
 **Technology**: Airflow + Dataflow
 
+**Shared Infrastructure Usage**:
+- **Temporary Storage**: Shared GCS staging with domain subfolders
+- **Comparison**: Domain-prefixed tables across shared datasets
+- **Reporting**: Shared `monitoring_data` dataset
+
 **Steps**:
-1. Copy S3 snapshot to GCS temporary location
-2. Create temporary external tables
-3. Run comparison between S3 and native tables
-4. Generate mismatch report
-5. Audit all differences
+1. Copy S3 snapshot to shared GCS staging bucket
+2. Create temporary external tables in shared `staging_data` dataset
+3. Compare with domain-prefixed tables in shared `raw_data` dataset
+4. Generate mismatch reports in shared `monitoring_data` dataset
 
 ## 4. Implementation Details
 
@@ -1163,32 +1246,48 @@ if __name__ == '__main__':
 
 ## 5. Configuration Management
 
-### 5.1 Main Pipeline Configuration
+### 5.1 Shared Infrastructure Configuration
+
+The platform uses a **shared infrastructure approach** with domain-specific data isolation:
 
 ```yaml
 # config/pipeline_config.yaml
 project: your-gcp-project-id
 region: asia-southeast1
-domain: member
+domain: member  # Domain-specific parameter
 
-# Source Configuration
-source:
-  project: source-project-id
-  dataset: refined_data
-  table: personas
+# Shared Infrastructure
+shared_infrastructure:
+  # Shared Datasets (no domain prefix)
+  datasets:
+    raw: raw_data
+    staging: staging_data
+    monitoring: monitoring_data
+  
+  # Shared Buckets (no domain prefix)  
+  buckets:
+    temp: "gs://your-project-dataflow-temp"
+    staging: "gs://your-project-dataflow-staging"
+    gcs_staging: "gs://your-project-gcs-staging"
+    configs: "gs://your-project-pipeline-configs"
+  
+  # Shared Pub/Sub Topics
+  pubsub:
+    topics:
+      create: "data-events-create"
+      update: "data-events-update"
+    # Domain-specific subscriptions
+    subscription: "projects/your-project/subscriptions/data-events-{domain}-sub"
 
-# Target Datasets
-target_datasets:
-  raw: member_raw
-  structure: member_structure
-  refined: member_refined
-  analytics: member_analytics
+# Domain-Specific Configuration
+domain_config:
+  # Table naming pattern: {domain}_{table_name}
+  table_prefix: "${domain}_"
+  
+  # Subfolder pattern: /{domain}/ within shared buckets
+  subfolder_pattern: "/{domain}/"
 
-# Pub/Sub Configuration
-pubsub:
-  subscription: projects/your-project/subscriptions/member-events-sub
-
-# Distribution Mapping
+# Distribution Mapping (domain-agnostic logic)
 distribution_mapping:
   raw_a1: [a, b, c]
   raw_a2: [a, e, f]
@@ -1197,7 +1296,7 @@ distribution_mapping:
   refined_b2: [a, b, c, d]
   refined_c1: [a, b, c, d, e, f, g]
 
-# Column Mappings
+# Column Mappings (apply to all domains)
 column_mappings:
   raw_a1:
     member_id: a
@@ -1208,13 +1307,6 @@ column_mappings:
     member_id: a
     email: e
     phone: f
-  
-  raw_a3:
-    member_id: a
-    email: e
-    address: g
-  
-  refined_b1:
     member_id: a
     member_name: b
     member_status: c
