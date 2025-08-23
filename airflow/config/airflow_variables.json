@@ -1,15 +1,15 @@
 {
-  "gcp_project_id": "your-gcp-project-id",
+  "gcp_project_id": "ntt-test-data-bq-looker",
   "gcp_region": "asia-southeast1",
   "gcp_zone": "asia-southeast1-a",
   
-  "s3_bucket": "your-aws-s3-bucket",
-  "aws_access_key_id": "your-aws-access-key",
-  "aws_secret_access_key": "your-aws-secret-key",
-  
-  "dataflow_network": "projects/your-gcp-project-id/global/networks/default",
-  "dataflow_subnetwork": "projects/your-gcp-project-id/regions/asia-southeast1/subnetworks/default",
-  "dataflow_service_account": "dataflow-sa@your-gcp-project-id.iam.gserviceaccount.com",
+  "s3_bucket": "demo-t1-analytics",
+  "aws_access_key_id": "aws-s3-access-key-id",
+  "aws_secret_access_key": "aws-s3-secret-access-key",
+
+  "dataflow_network": "projects/ntt-test-data-bq-looker/global/networks/default",
+  "dataflow_subnetwork": "projects/ntt-test-data-bq-looker/regions/asia-southeast1/subnetworks/default",
+  "dataflow_service_account": "dataflow-sa@ntt-test-data-bq-looker.iam.gserviceaccount.com",
   
   "shared_infrastructure": {
     "datasets": {
@@ -23,11 +23,11 @@
       "reference": "reference_data"
     },
     "storage": {
-      "staging_bucket": "your-gcp-project-id-staging",
-      "raw_bucket": "your-gcp-project-id-raw",
-      "temp_bucket": "your-gcp-project-id-dataflow-temp",
-      "config_bucket": "your-gcp-project-id-pipeline-configs",
-      "template_bucket": "your-gcp-project-id-dataflow-templates"
+      "staging_bucket": "ntt-test-data-bq-looker-staging",
+      "raw_bucket": "ntt-test-data-bq-looker-raw",
+      "temp_bucket": "ntt-test-data-bq-looker-dataflow-temp",
+      "config_bucket": "ntt-test-data-bq-looker-pipeline-configs",
+      "template_bucket": "ntt-test-data-bq-looker-dataflow-templates"
     },
     "pubsub": {
       "create_topic": "data-events-create",
@@ -51,19 +51,19 @@
     "member": {
       "tables": ["s_loy_program", "s_org_ext", "s_loy_tier", "s_loy_member"],
       "enabled": true,
-      "config_path": "gs://your-gcp-project-id-pipeline-configs/member/config.yaml",
+      "config_path": "gs://ntt-test-data-bq-looker-pipeline-configs/member/config.yaml",
       "storage_subfolder": "member/"
     },
     "order": {
       "tables": ["order_header", "order_detail", "payment"],
       "enabled": true,
-      "config_path": "gs://your-gcp-project-id-pipeline-configs/order/config.yaml",
+      "config_path": "gs://ntt-test-data-bq-looker-pipeline-configs/order/config.yaml",
       "storage_subfolder": "order/"
     },
     "product": {
       "tables": ["product_master", "product_category", "inventory"],
       "enabled": false,
-      "config_path": "gs://your-gcp-project-id-pipeline-configs/product/config.yaml",
+      "config_path": "gs://ntt-test-data-bq-looker-pipeline-configs/product/config.yaml",
       "storage_subfolder": "product/"
     }
   },
@@ -107,15 +107,15 @@
   },
   
   "storage_config": {
-    "temp_location": "gs://your-gcp-project-id-dataflow-temp",
-    "staging_location": "gs://your-gcp-project-id-dataflow-staging",
-    "config_bucket": "your-gcp-project-id-pipeline-configs",
-    "template_bucket": "your-gcp-project-id-dataflow-templates"
+    "temp_location": "gs://ntt-test-data-bq-looker-dataflow-temp",
+    "staging_location": "gs://ntt-test-data-bq-looker-dataflow-staging",
+    "config_bucket": "ntt-test-data-bq-looker-pipeline-configs",
+    "template_bucket": "ntt-test-data-bq-looker-dataflow-templates"
   },
   
   "security": {
-    "kms_key_name": "projects/your-gcp-project-id/locations/asia-southeast1/keyRings/dataflow-ring/cryptoKeys/dataflow-key",
-    "vpc_network": "projects/your-gcp-project-id/global/networks/vpc-network",
+    "kms_key_name": "projects/ntt-test-data-bq-looker/locations/asia-southeast1/keyRings/dataflow-ring/cryptoKeys/dataflow-key",
+    "vpc_network": "projects/ntt-test-data-bq-looker/global/networks/vpc-network",
     "private_google_access": true
   }
 }

@@ -59,8 +59,8 @@ def create_reconciliation_dag(domain: str, tables: list):
     
     def create_aws_connection(**context):
         """Create AWS connection for BigQuery to access S3"""
-        from airflow.models import Connection
-        from airflow import settings
+        # from airflow.models import Connection
+        # from airflow import settings
         
         # Get secrets from XCom
         aws_key = context['task_instance'].xcom_pull(task_ids='get_aws_access_key')
