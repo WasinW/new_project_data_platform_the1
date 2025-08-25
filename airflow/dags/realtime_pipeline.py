@@ -1,7 +1,7 @@
-# airflow/dags/realtime_pipeline_sts.py
+# airflow/dags/realtime_pipeline.py
 """
 Realtime Pipeline - Following Context Detail Requirements
-✅ Uses Dataflow with hybrid_pipeline_sts.py for processing
+✅ Uses Dataflow with hybrid_pipeline.py for processing
 ✅ Composer triggers Dataflow with proper parameters
 ✅ Dataflow handles Pub/Sub consumption, windowing, secrets, transformations
 ✅ Follows the original design: Airflow orchestration, Dataflow processing
@@ -87,7 +87,7 @@ def create_realtime_dag(domain: str):
     # Main Dataflow job using hybrid_pipeline_sts.py
     run_realtime_dataflow = DataflowCreatePythonJobOperator(
         task_id='run_realtime_dataflow',
-        py_file=f'gs://{Variable.get("gcp_project_id")}-pipeline-configs/dataflow/hybrid_pipeline_sts.py',
+        py_file=f'gs://{Variable.get("gcp_project_id")}-pipeline-configs/dataflow/hybrid_pipeline.py',
         job_name=f'realtime-{domain}-{{{{ ds_nodash }}}}',
         dataflow_config={
             'project_id': '{{ var.value.gcp_project_id }}',

@@ -1,15 +1,19 @@
 # airflow/dags/reconciliation_pipeline.py
 """
-Reconciliation Pipeline - SQL-First Solution
-✅ Uses BigQuery Federated Queries instead of Dataflow
-✅ Uses SecretsManagerRetrieveSecretOperator for AWS credentials
-✅ Uses BigQueryInsertJobOperator for all processing
-✅ 90% less code, better performance, easier debugging
+Reconciliation Pipeline - Following Context Detail Requirements
+✅ Uses Dataflow with reconciliation_pipeline.py for processing  
+✅ Compares BigQuery data with S3 source data
+✅ Uses Storage Transfer Service for S3 access when needed
+✅ Follows the original design: Airflow orchestration, Dataflow processing
 """
 from airflow import DAG
 from airflow.models import Variable
-from airflow.providers.google.cloud.operators.secret_manager import SecretsManagerRetrieveSecretOperator
-from airflow.providers.google.cloud.operators.bigquery import BigQueryInsertJobOperator
+from airflow.providers.google.cloud.operators.dataflow import DataflowCreatePythonJobOperator
+from airflow.providers.google.cloud.operators.bigquery import BigQueryInsertJobOperator, BigQueryCheckOperator
+from airflow.providers.google.cloud.operators.cloud_storage_transfer_service import (
+    CloudDataTransferServiceCreateJobOperator,
+    CloudDataTransferServiceRunJobOperator
+)
 from airflow.operators.python import PythonOperator
 from datetime import datetime, timedelta
 import json
@@ -20,298 +24,263 @@ default_args = {
     'start_date': datetime(2025, 1, 1),
     'email_on_failure': True,
     'retries': 1,
-    'retry_delay': timedelta(minutes=5)
+    'retry_delay': timedelta(minutes=15)
 }
 
-def create_reconciliation_dag(domain: str, tables: list):
-    """Create reconciliation pipeline DAG using SQL-first approach"""
+def create_reconciliation_dag(domain: str):
+    """Create reconciliation pipeline DAG following context detail requirements"""
     
     dag = DAG(
         f'reconciliation_{domain}_pipeline',
         default_args=default_args,
-        description=f'Daily reconciliation for {domain} domain (SQL-First)',
+        description=f'Daily reconciliation pipeline for {domain} domain (STS compliant)',
         schedule_interval='@daily',
         catchup=False,
-        tags=['reconciliation', domain, 'validation', 'sql-first']
+        max_active_runs=1,
+        tags=['reconciliation', domain, 'daily', 'sts-compliant']
     )
     
-    # ✅ Step 1: Get AWS Secrets using Native Operator (no client!)
-    get_aws_access_key = SecretsManagerRetrieveSecretOperator(
-        task_id='get_aws_access_key',
-        secret_id='aws-s3-access-key-id',
-        project_id='{{ var.value.gcp_project_id }}',
-        dag=dag
-    )
-    
-    get_aws_secret_key = SecretsManagerRetrieveSecretOperator(
-        task_id='get_aws_secret_key',
-        secret_id='aws-s3-secret-access-key', 
-        project_id='{{ var.value.gcp_project_id }}',
-        dag=dag
-    )
-    
-    get_s3_bucket = SecretsManagerRetrieveSecretOperator(
-        task_id='get_s3_bucket',
-        secret_id='aws-s3-bucket-name',
-        project_id='{{ var.value.gcp_project_id }}',
-        dag=dag
-    )
-    
-    def create_aws_connection(**context):
-        """Create AWS connection for BigQuery to access S3"""
-        # from airflow.models import Connection
-        # from airflow import settings
-        
-        # Get secrets from XCom
-        aws_key = context['task_instance'].xcom_pull(task_ids='get_aws_access_key')
-        aws_secret = context['task_instance'].xcom_pull(task_ids='get_aws_secret_key')
-        
-        # This would typically create external connection in BigQuery
-        # For demo, we'll simulate the connection creation
-        connection_info = {
-            'connection_id': f'{domain}-s3-connection',
-            'aws_access_key_id': aws_key,
-            'aws_secret_access_key': aws_secret,
-            'region': 'us-east-1'
+    def prepare_reconciliation_config(**context):
+        """Prepare reconciliation configuration for Dataflow"""
+        execution_date = context['execution_date']
+        config = {
+            'mode': 'reconciliation',
+            'domain': domain,
+            'config_path': f'gs://{Variable.get("gcp_project_id")}-pipeline-configs/{domain}/config.yaml',
+            'reconciliation_date': execution_date.strftime('%Y-%m-%d'),
+            's3_bucket': Variable.get(f'{domain}_s3_source_bucket'),
+            'gcs_bucket': f'{Variable.get("gcp_project_id")}-reconciliation-data',
+            'bigquery_dataset': f'{Variable.get("gcp_project_id")}.{domain}_reconciliation'
         }
-        
-        print(f"AWS connection prepared for BigQuery federated queries: {connection_info['connection_id']}")
-        return connection_info
+        return config
     
-    # Create AWS connection for BigQuery
-    setup_aws_connection = PythonOperator(
-        task_id='setup_aws_connection',
-        python_callable=create_aws_connection,
+    # Check if daily batch processing completed successfully
+    check_daily_batch_completion = BigQueryCheckOperator(
+        task_id='check_daily_batch_completion',
+        sql=f"""
+            SELECT COUNT(*) as completed_batches
+            FROM `{{{{ var.value.gcp_project_id }}}}.monitoring_data.{domain}_batch_jobs`
+            WHERE DATE(completion_time) = DATE('{{{{ ds }}}}')
+              AND job_status = 'SUCCESS'
+            HAVING COUNT(*) >= 24  -- All 24 hourly batches completed
+        """,
         dag=dag
     )
     
-    # Process each table
-    for table in tables:
-        
-        # ✅ Step 2: Create External Table for S3 using Federated Query (no STS client!)
-        create_s3_external_table = BigQueryInsertJobOperator(
-            task_id=f'create_s3_external_{table}',
-            configuration={
-                'query': {
-                    'query': f"""
-                        CREATE OR REPLACE EXTERNAL TABLE `{{{{ var.value.gcp_project_id }}}}.{domain}_reconcile_temp.{table}_s3`
-                        OPTIONS (
-                            format = 'PARQUET',
-                            uris = ['s3://{{{{ task_instance.xcom_pull(task_ids="get_s3_bucket") }}}}/{domain}/{table}/{{{{ ds }}}}/*.parquet'],
-                            connection_name = 'projects/{{{{ var.value.gcp_project_id }}}}/locations/{{{{ var.value.gcp_region }}}}/connections/{domain}-s3-connection'
-                        )
-                    """,
-                    'useLegacySql': False
+    # Prepare reconciliation configuration
+    prepare_config = PythonOperator(
+        task_id='prepare_reconciliation_config',
+        python_callable=prepare_reconciliation_config,
+        dag=dag
+    )
+    
+    # Create STS job to copy S3 data for reconciliation
+    create_sts_reconciliation_job = CloudDataTransferServiceCreateJobOperator(
+        task_id='create_sts_reconciliation_job',
+        body={
+            'description': f'Daily reconciliation data transfer for {domain} - {{{{ ds }}}}',
+            'status': 'ENABLED',
+            'transferSpec': {
+                'awsS3DataSource': {
+                    'bucketName': '{{ var.value.' + f'{domain}_s3_source_bucket' + ' }}',
+                    'path': f'{domain}/data/{{{{ ds }}}}/',
+                    'awsAccessKey': {
+                        'accessKeyId': '{{ var.value.aws_access_key_id }}',
+                        'secretAccessKey': '{{ var.value.aws_secret_access_key }}'
+                    }
+                },
+                'gcsDataSink': {
+                    'bucketName': '{{ var.value.gcp_project_id }}-reconciliation-data',
+                    'path': f'{domain}/reconciliation/{{{{ ds }}}}/'
+                },
+                'transferOptions': {
+                    'overwriteObjectsAlreadyExistingInSink': True,
+                    'deleteObjectsUniqueInSink': False
                 }
             },
-            dag=dag
-        )
-        
-        # ✅ Step 3: Run reconciliation comparison using pure SQL (no Dataflow!)
-        run_reconciliation_comparison = BigQueryInsertJobOperator(
-            task_id=f'reconcile_{table}',
-            configuration={
-                'query': {
-                    'query': f"""
-                        WITH comparison AS (
-                            SELECT 
-                                COALESCE(s3.id, bq.id) as record_id,
-                                COALESCE(s3.member_id, bq.member_id) as member_id,
-                                
-                                -- Determine reconciliation status
-                                CASE 
-                                    WHEN s3.id IS NULL AND bq.id IS NOT NULL THEN 'MISSING_IN_S3'
-                                    WHEN bq.id IS NULL AND s3.id IS NOT NULL THEN 'MISSING_IN_BQ'
-                                    WHEN s3.id = bq.id AND s3.name = bq.name AND s3.email = bq.email THEN 'MATCH'
-                                    ELSE 'MISMATCH'
-                                END as reconciliation_status,
-                                
-                                -- Detailed comparison for mismatches
-                                CASE 
-                                    WHEN s3.name != bq.name THEN CONCAT('name: s3=', COALESCE(s3.name, 'NULL'), ' bq=', COALESCE(bq.name, 'NULL'))
-                                    ELSE NULL
-                                END as name_diff,
-                                
-                                CASE 
-                                    WHEN s3.email != bq.email THEN CONCAT('email: s3=', COALESCE(s3.email, 'NULL'), ' bq=', COALESCE(bq.email, 'NULL'))
-                                    ELSE NULL
-                                END as email_diff,
-                                
-                                CASE 
-                                    WHEN s3.status != bq.status THEN CONCAT('status: s3=', COALESCE(s3.status, 'NULL'), ' bq=', COALESCE(bq.status, 'NULL'))
-                                    ELSE NULL
-                                END as status_diff,
-                                
-                                -- Source data for audit
-                                TO_JSON_STRING(s3) as s3_record,
-                                TO_JSON_STRING(bq) as bq_record,
-                                
-                                -- Metadata
-                                CURRENT_TIMESTAMP() as reconciliation_timestamp,
-                                DATE('{{{{ ds }}}}') as reconciliation_date,
-                                '{table}' as table_name,
-                                '{domain}' as domain
-                                
-                            FROM `{{{{ var.value.gcp_project_id }}}}.{domain}_reconcile_temp.{table}_s3` s3
-                            FULL OUTER JOIN `{{{{ var.value.gcp_project_id }}}}.raw_data.{domain}_{table}` bq
-                                ON s3.id = bq.id
-                        ),
-                        
-                        -- Add mismatch details for non-matching records
-                        detailed_comparison AS (
-                            SELECT 
-                                *,
-                                ARRAY_TO_STRING(ARRAY(
-                                    SELECT diff FROM UNNEST([name_diff, email_diff, status_diff]) as diff 
-                                    WHERE diff IS NOT NULL
-                                ), '; ') as mismatch_details,
-                                
-                                -- Count mismatches
-                                (CASE WHEN name_diff IS NOT NULL THEN 1 ELSE 0 END +
-                                 CASE WHEN email_diff IS NOT NULL THEN 1 ELSE 0 END +
-                                 CASE WHEN status_diff IS NOT NULL THEN 1 ELSE 0 END) as mismatch_count
-                                 
-                            FROM comparison
-                        )
-                        
-                        -- Insert results (only non-matches for efficiency)
-                        INSERT INTO `{{{{ var.value.gcp_project_id }}}}.{domain}_audit.reconciliation_{table}_results`
-                        SELECT * FROM detailed_comparison
-                        WHERE reconciliation_status != 'MATCH'
-                    """,
-                    'useLegacySql': False
+            'schedule': {
+                'scheduleStartDate': {
+                    'year': int('{{ ds[:4] }}'),
+                    'month': int('{{ ds[5:7] }}'),
+                    'day': int('{{ ds[8:10] }}')
+                },
+                'scheduleEndDate': {
+                    'year': int('{{ ds[:4] }}'),
+                    'month': int('{{ ds[5:7] }}'),
+                    'day': int('{{ ds[8:10] }}')
                 }
-            },
-            dag=dag
-        )
-        
-        # ✅ Step 4: Generate reconciliation statistics using SQL
-        generate_reconciliation_stats = BigQueryInsertJobOperator(
-            task_id=f'generate_stats_{table}',
-            configuration={
-                'query': {
-                    'query': f"""
-                        WITH stats AS (
-                            SELECT 
-                                reconciliation_status,
-                                COUNT(*) as record_count,
-                                ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER (), 2) as percentage
-                            FROM `{{{{ var.value.gcp_project_id }}}}.{domain}_audit.reconciliation_{table}_results`
-                            WHERE reconciliation_date = DATE('{{{{ ds }}}}')
-                            GROUP BY reconciliation_status
-                            
-                            UNION ALL
-                            
-                            -- Add MATCH records count (not stored in results table)
-                            SELECT 
-                                'MATCH' as reconciliation_status,
-                                (
-                                    SELECT COUNT(*) 
-                                    FROM `{{{{ var.value.gcp_project_id }}}}.raw_data.{domain}_{table}` bq
-                                    INNER JOIN `{{{{ var.value.gcp_project_id }}}}.{domain}_reconcile_temp.{table}_s3` s3
-                                        ON bq.id = s3.id 
-                                        AND bq.name = s3.name 
-                                        AND bq.email = s3.email
-                                ) as record_count,
-                                0.0 as percentage  -- Will be recalculated below
-                        ),
-                        
-                        final_stats AS (
-                            SELECT 
-                                reconciliation_status,
-                                record_count,
-                                ROUND(record_count * 100.0 / SUM(record_count) OVER (), 2) as percentage,
-                                CURRENT_TIMESTAMP() as generated_at,
-                                DATE('{{{{ ds }}}}') as reconciliation_date,
-                                '{table}' as table_name,
-                                '{domain}' as domain
-                            FROM stats
-                        )
-                        
-                        INSERT INTO `{{{{ var.value.gcp_project_id }}}}.{domain}_audit.reconciliation_{table}_stats`
-                        SELECT * FROM final_stats
-                    """,
-                    'useLegacySql': False
-                }
-            },
-            dag=dag
-        )
-        
-        # ✅ Step 5: Check alert thresholds using SQL
-        check_reconciliation_alerts = BigQueryInsertJobOperator(
-            task_id=f'check_alerts_{table}',
-            configuration={
-                'query': {
-                    'query': f"""
-                        WITH alert_check AS (
-                            SELECT 
-                                table_name,
-                                domain,
-                                reconciliation_date,
-                                SUM(CASE WHEN reconciliation_status = 'MISMATCH' THEN percentage ELSE 0 END) as mismatch_percentage,
-                                SUM(CASE WHEN reconciliation_status IN ('MISSING_IN_S3', 'MISSING_IN_BQ') THEN percentage ELSE 0 END) as missing_percentage,
-                                CURRENT_TIMESTAMP() as check_timestamp
-                            FROM `{{{{ var.value.gcp_project_id }}}}.{domain}_audit.reconciliation_{table}_stats`
-                            WHERE reconciliation_date = DATE('{{{{ ds }}}}')
-                            GROUP BY table_name, domain, reconciliation_date
-                        ),
-                        
-                        alerts AS (
-                            SELECT 
-                                *,
-                                CASE 
-                                    WHEN mismatch_percentage > 5.0 THEN 'HIGH_MISMATCH_RATE'
-                                    WHEN missing_percentage > 10.0 THEN 'HIGH_MISSING_RATE'
-                                    ELSE NULL
-                                END as alert_type,
-                                CASE 
-                                    WHEN mismatch_percentage > 15.0 OR missing_percentage > 25.0 THEN 'CRITICAL'
-                                    WHEN mismatch_percentage > 5.0 OR missing_percentage > 10.0 THEN 'WARNING'
-                                    ELSE 'OK'
-                                END as alert_severity
-                            FROM alert_check
-                        )
-                        
-                        INSERT INTO `{{{{ var.value.gcp_project_id }}}}.{domain}_audit.reconciliation_alerts`
+            }
+        },
+        dag=dag
+    )
+    
+    # Run the STS job
+    run_sts_reconciliation_job = CloudDataTransferServiceRunJobOperator(
+        task_id='run_sts_reconciliation_job',
+        job_name='{{ task_instance.xcom_pull(task_ids="create_sts_reconciliation_job")["name"] }}',
+        wait=True,
+        timeout=3600,  # 1 hour timeout
+        dag=dag
+    )
+    
+    # Run reconciliation Dataflow job
+    run_reconciliation_dataflow = DataflowCreatePythonJobOperator(
+        task_id='run_reconciliation_dataflow',
+        py_file=f'gs://{Variable.get("gcp_project_id")}-pipeline-configs/dataflow/reconciliation_pipeline.py',
+        job_name=f'reconciliation-{domain}-{{{{ ds_nodash }}}}',
+        dataflow_config={
+            'project_id': '{{ var.value.gcp_project_id }}',
+            'region': '{{ var.value.gcp_region }}',
+            'service_account_email': '{{ var.value.dataflow_service_account }}',
+            'network': '{{ var.value.dataflow_network }}',
+            'subnetwork': '{{ var.value.dataflow_subnetwork }}',
+            
+            # STS Compliant parameters
+            'mode': 'reconciliation',
+            'domain': domain,
+            'config_path': f'gs://{Variable.get("gcp_project_id")}-pipeline-configs/{domain}/config.yaml',
+            'reconciliation_date': '{{ ds }}',
+            
+            # Data sources
+            's3_data_path': f'gs://{Variable.get("gcp_project_id")}-reconciliation-data/{domain}/reconciliation/{{{{ ds }}}}',
+            'bigquery_dataset': f'{Variable.get("gcp_project_id")}.{domain}_data',
+            
+            # Pipeline configuration
+            'temp_location': f'gs://{Variable.get("gcp_project_id")}-dataflow-temp/{domain}/reconciliation/{{{{ ds }}}}',
+            'staging_location': f'gs://{Variable.get("gcp_project_id")}-dataflow-staging/{domain}/reconciliation/{{{{ ds }}}}',
+            
+            # Dataflow runner settings
+            'runner': 'DataflowRunner',
+            'setup_file': './setup.py',
+            
+            # Reconciliation optimizations
+            'use_public_ips': False,
+            'max_num_workers': 15,
+            'num_workers': 3,
+            'machine_type': 'n2-standard-8',
+            'disk_size_gb': 200,
+        },
+        dag=dag
+    )
+    
+    # Analyze reconciliation results
+    analyze_reconciliation_results = BigQueryInsertJobOperator(
+        task_id='analyze_reconciliation_results',
+        configuration={
+            'query': {
+                'query': f"""
+                    WITH reconciliation_summary AS (
                         SELECT 
-                            table_name,
-                            domain,
-                            reconciliation_date,
-                            alert_type,
-                            alert_severity,
-                            CONCAT(
-                                'Reconciliation issues for ', table_name, ': ',
-                                'Mismatch: ', CAST(mismatch_percentage AS STRING), '%, ',
-                                'Missing: ', CAST(missing_percentage AS STRING), '%'
-                            ) as alert_message,
-                            mismatch_percentage,
-                            missing_percentage,
-                            check_timestamp
-                        FROM alerts
-                        WHERE alert_type IS NOT NULL
-                    """,
-                    'useLegacySql': False
-                }
-            },
-            dag=dag
-        )
-        
-        # Chain tasks for this table
-        [get_aws_access_key, get_aws_secret_key, get_s3_bucket] >> setup_aws_connection
-        setup_aws_connection >> create_s3_external_table >> run_reconciliation_comparison >> generate_reconciliation_stats >> check_reconciliation_alerts
+                            '{domain}' as domain,
+                            '{{{{ ds }}}}' as reconciliation_date,
+                            COUNT(*) as total_comparisons,
+                            COUNTIF(status = 'MATCH') as matched_records,
+                            COUNTIF(status = 'MISMATCH') as mismatched_records,
+                            COUNTIF(status = 'MISSING_S3') as missing_in_s3,
+                            COUNTIF(status = 'MISSING_BQ') as missing_in_bigquery,
+                            COUNT(DISTINCT table_name) as tables_reconciled
+                        FROM `{{{{ var.value.gcp_project_id }}}}.{domain}_reconciliation.reconciliation_results`
+                        WHERE reconciliation_date = '{{{{ ds }}}}'
+                    ),
+                    data_quality_metrics AS (
+                        SELECT
+                            AVG(CASE WHEN status = 'MATCH' THEN 1.0 ELSE 0.0 END) * 100 as match_percentage,
+                            AVG(CASE WHEN status = 'MISMATCH' THEN 1.0 ELSE 0.0 END) * 100 as mismatch_percentage,
+                            COUNT(DISTINCT error_type) as unique_error_types
+                        FROM `{{{{ var.value.gcp_project_id }}}}.{domain}_reconciliation.reconciliation_results`
+                        WHERE reconciliation_date = '{{{{ ds }}}}'
+                          AND status != 'MATCH'
+                    )
+                    INSERT INTO `{{{{ var.value.gcp_project_id }}}}.monitoring_data.{domain}_reconciliation_summary`
+                    SELECT 
+                        r.*,
+                        q.match_percentage,
+                        q.mismatch_percentage,
+                        q.unique_error_types,
+                        CASE 
+                            WHEN q.match_percentage >= 95.0 THEN 'EXCELLENT'
+                            WHEN q.match_percentage >= 90.0 THEN 'GOOD'
+                            WHEN q.match_percentage >= 80.0 THEN 'FAIR'
+                            ELSE 'POOR'
+                        END as data_quality_grade,
+                        CURRENT_TIMESTAMP() as analysis_timestamp
+                    FROM reconciliation_summary r
+                    CROSS JOIN data_quality_metrics q
+                """,
+                'useLegacySql': False
+            }
+        },
+        dag=dag
+    )
+    
+    # Generate reconciliation alerts for critical issues
+    generate_reconciliation_alerts = BigQueryInsertJobOperator(
+        task_id='generate_reconciliation_alerts',
+        configuration={
+            'query': {
+                'query': f"""
+                    WITH critical_issues AS (
+                        SELECT 
+                            '{domain}' as domain,
+                            '{{{{ ds }}}}' as alert_date,
+                            'RECONCILIATION_FAILURE' as alert_type,
+                            CASE 
+                                WHEN match_percentage < 80.0 THEN 'CRITICAL'
+                                WHEN match_percentage < 90.0 THEN 'WARNING'
+                                ELSE 'INFO'
+                            END as severity,
+                            CONCAT('Data quality for {domain} on {{{{ ds }}}} is ', 
+                                   data_quality_grade, ' (', 
+                                   ROUND(match_percentage, 2), '% match rate)') as message,
+                            matched_records,
+                            mismatched_records,
+                            missing_in_s3,
+                            missing_in_bigquery
+                        FROM `{{{{ var.value.gcp_project_id }}}}.monitoring_data.{domain}_reconciliation_summary`
+                        WHERE reconciliation_date = '{{{{ ds }}}}'
+                          AND data_quality_grade IN ('FAIR', 'POOR')
+                    )
+                    INSERT INTO `{{{{ var.value.gcp_project_id }}}}.monitoring_data.{domain}_pipeline_alerts`
+                    SELECT 
+                        *,
+                        CURRENT_TIMESTAMP() as alert_timestamp,
+                        'reconciliation' as pipeline_type
+                    FROM critical_issues
+                """,
+                'useLegacySql': False
+            }
+        },
+        dag=dag
+    )
+    
+    # Clean up old reconciliation data (keep last 7 days)
+    cleanup_old_reconciliation_data = BigQueryInsertJobOperator(
+        task_id='cleanup_old_reconciliation_data',
+        configuration={
+            'query': {
+                'query': f"""
+                    DELETE FROM `{{{{ var.value.gcp_project_id }}}}.{domain}_reconciliation.reconciliation_results`
+                    WHERE reconciliation_date < DATE_SUB('{{{{ ds }}}}', INTERVAL 7 DAY);
+                    
+                    DELETE FROM `{{{{ var.value.gcp_project_id }}}}.monitoring_data.{domain}_reconciliation_summary`
+                    WHERE reconciliation_date < DATE_SUB('{{{{ ds }}}}', INTERVAL 30 DAY);
+                """,
+                'useLegacySql': False
+            }
+        },
+        dag=dag
+    )
+    
+    # Chain tasks
+    (check_daily_batch_completion >> prepare_config 
+     >> create_sts_reconciliation_job >> run_sts_reconciliation_job 
+     >> run_reconciliation_dataflow >> analyze_reconciliation_results 
+     >> [generate_reconciliation_alerts, cleanup_old_reconciliation_data])
     
     return dag
 
 
-# ✅ Create DAGs for each domain using SQL-first approach
-domains_config = json.loads(Variable.get('reconciliation_domains', '[]'))
-for domain_config in domains_config:
-    if isinstance(domain_config, dict):
-        domain = domain_config.get('domain')
-        tables = domain_config.get('tables', [])
-        if domain and tables:
-            globals()[f'reconciliation_{domain}_dag'] = create_reconciliation_dag(domain, tables)
-    elif isinstance(domain_config, str):
-        # Backward compatibility
-        default_tables = ['members', 'transactions']
-        globals()[f'reconciliation_{domain_config}_dag'] = create_reconciliation_dag(domain_config, default_tables)
+# Create DAGs for each domain
+domains_config = json.loads(Variable.get('reconciliation_domains', '["the1", "member", "order"]'))
+for domain in domains_config:
+    globals()[f'reconciliation_{domain}_dag'] = create_reconciliation_dag(domain)

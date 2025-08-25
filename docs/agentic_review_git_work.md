@@ -1,4 +1,11 @@
-# Agentic Review: Git Work Assessment & Implementation Status
+# Agentic Review: Git Work Assessment & Implementat### 3. **All Pipelines Now STS Compliant**
+**Files:** `*_pipeline.py` (main versions)
+
+- ✅ **Realtime Pipeline** - streaming กับ windowing และ dependency checking
+- ✅ **Batch Pipeline** - hourly processing กับ data validation  
+- ✅ **Reconciliation Pipeline** - STS snapshot comparison กับ data quality assessment
+
+**Backup Files:** `*_pipeline_bk.py` (old versions for reference)atus
 
 ## 🎯 Implementation Status Overview
 
@@ -29,7 +36,7 @@
   - แยกโซน staging/raw/refined ตาม design
 
 ### 2. **Hybrid Dataflow Pipeline** - ✅ **COMPLETED**
-**File:** `dataflow/pipelines/hybrid_pipeline_sts.py`
+**File:** `dataflow/pipelines/hybrid_pipeline.py` (main version)
 
 - ✅ **Config Management**
   - โหลด config จาก GCS YAML file (`config/pipeline_config.yaml`)
@@ -48,6 +55,8 @@
   - เขียนข้อมูลลง GCS (Parquet) ในโซน raw
   - เขียนลง BigQuery ในโซน refined/analytics
   - ไม่เขียนลง `raw_data` dataset โดยตรง
+
+**Backup File:** `dataflow/pipelines/hybrid_pipeline_bk.py` (old version)
 
 ### 3. **All Pipelines Now STS Compliant**
 **Files:** `*_pipeline_sts.py`
@@ -73,6 +82,8 @@
 ## 🏆 Conclusion
 
 โค้ดบน branch `feature/refactor_code` ได้รับการปรับปรุงให้สอดคล้องกับ **context_detail.md** requirements อย่างครบถ้วน ทุก pipeline ใช้ STS, Secret Manager, config-driven architecture, windowing/dependency logic และ proper data zone separation ตามที่กำหนดไว้
+
+**Recent Fix (Aug 25, 2025):** ✅ แก้ไข syntax errors ใน `hybrid_pipeline.py` และทุกไฟล์ผ่าน Python syntax validation
 
 **Status: ✅ READY FOR PRODUCTION DEPLOYMENT**
 
