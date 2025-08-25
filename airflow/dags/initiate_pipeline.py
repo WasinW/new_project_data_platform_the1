@@ -1,16 +1,20 @@
 # airflow/dags/initiate_pipeline.py
 """
-Initiate Pipeline - Native Operators Solution
-✅ Uses SecretsManagerRetrieveSecretOperator instead of client creation
-✅ Uses S3ToGCSOperator for data transfer
-✅ Uses REST API for Storage Transfer Service
-✅ Eliminates all manual client management
+Initiate Pipeline - Storage Transfer Service Based Migration
+✅ Uses Storage Transfer Service for S3→GCS migration (as per requirements)
+✅ Uses SecretsManagerRetrieveSecretOperator for AWS credentials
+✅ Uses BigLake external tables for staging
+✅ Eliminates S3ToGCSOperator in favor of STS jobs
+✅ Proper audit logging and lineage tracking
 """
 from airflow import DAG
 from airflow.models import Variable
 from airflow.operators.python import PythonOperator
 from airflow.providers.google.cloud.operators.secret_manager import SecretsManagerRetrieveSecretOperator
-from airflow.providers.amazon.aws.transfers.s3_to_gcs import S3ToGCSOperator
+from airflow.providers.google.cloud.operators.storage_transfer import (
+    CloudDataTransferServiceCreateJobOperator,
+    CloudDataTransferServiceRunJobOperator
+)
 from airflow.providers.google.cloud.operators.bigquery import (
     BigQueryCreateExternalTableOperator,
     BigQueryInsertJobOperator
@@ -84,18 +88,53 @@ def create_initiate_dag(domain: str, tables: list):
         dag=dag
     )
     
-    # Step 3: Create table-specific tasks
+    # Step 3: Create table-specific tasks using Storage Transfer Service
     for table in tables:
         
-        # ✅ Use S3ToGCSOperator instead of manual STS client
-        copy_s3_to_gcs = S3ToGCSOperator(
-            task_id=f'copy_{table}_s3_to_gcs',
-            bucket='{{ task_instance.xcom_pull(task_ids="get_s3_bucket_name") }}',
-            prefix=f'{domain}/{table}/',
-            dest_gcs=f'gs://{{{{ var.value.gcp_project_id }}}}-gcs-staging/{domain}/{table}/',
-            aws_conn_id='aws_s3_connection',
-            gcp_conn_id='google_cloud_default',
-            replace=True,
+        # ✅ Use Storage Transfer Service for S3→GCS (as per requirements)
+        create_sts_job = CloudDataTransferServiceCreateJobOperator(
+            task_id=f'create_sts_job_{table}',
+            body={
+                'description': f'Transfer {table} from S3 to GCS for {domain}',
+                'status': 'ENABLED',
+                'projectId': '{{ var.value.gcp_project_id }}',
+                'transferSpec': {
+                    'awsS3DataSource': {
+                        'bucketName': '{{ task_instance.xcom_pull(task_ids="get_s3_bucket_name") }}',
+                        'path': f'{domain}/{table}/',
+                        'awsAccessKey': {
+                            'accessKeyId': '{{ task_instance.xcom_pull(task_ids="get_aws_access_key") }}',
+                            'secretAccessKey': '{{ task_instance.xcom_pull(task_ids="get_aws_secret_key") }}'
+                        }
+                    },
+                    'gcsDataSink': {
+                        'bucketName': '{{ var.value.gcp_project_id }}-gcs-staging',
+                        'path': f'{domain}/{table}/'
+                    },
+                    'objectConditions': {
+                        'maxTimeElapsedSinceLastModification': '2592000s'  # 30 days
+                    },
+                    'transferOptions': {
+                        'overwriteObjectsAlreadyExistingInSink': True
+                    }
+                },
+                'schedule': {
+                    'scheduleStartDate': {
+                        'year': 2025, 'month': 1, 'day': 1
+                    },
+                    'scheduleEndDate': {
+                        'year': 2025, 'month': 12, 'day': 31
+                    }
+                }
+            },
+            dag=dag
+        )
+        
+        # Run the STS job
+        run_sts_job = CloudDataTransferServiceRunJobOperator(
+            task_id=f'run_sts_job_{table}',
+            job_name=f'{{{{ task_instance.xcom_pull(task_ids="create_sts_job_{table}") }}}}',
+            project_id='{{ var.value.gcp_project_id }}',
             dag=dag
         )
         
@@ -186,7 +225,7 @@ def create_initiate_dag(domain: str, tables: list):
         
         # Chain tasks for this table
         [get_aws_access_key, get_aws_secret_key, get_s3_bucket_name] >> setup_dataplex
-        setup_dataplex >> copy_s3_to_gcs >> create_external_table >> process_data >> register_dataplex_asset >> track_lineage
+        setup_dataplex >> create_sts_job >> run_sts_job >> create_external_table >> process_data >> register_dataplex_asset >> track_lineage
     
     return dag
 

@@ -1,0 +1,7 @@
+zone,table,s3_prefix,gcs_prefix
+raw,member_profile,the1-data/member/profile,the1/member/profile
+raw,member_address,the1-data/member/address,the1/member/address
+raw,order_detail,the1-data/order/detail,the1/order/detail
+raw,order_header,the1-data/order/header,the1/order/header
+staging,member_segment,the1-data/member/segment,the1/member/segment
+staging,product_catalog,the1-data/product/catalog,the1/product/catalog
