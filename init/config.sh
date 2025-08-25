@@ -5,11 +5,11 @@ export PROJECT_NUMBER="$(gcloud projects describe "$PROJECT_ID" --format='value(
 export REGION="asia-southeast1"        # Dataflow/Composer region
 export BQ_LOCATION="$REGION"           # BigQuery region (ควรตรงกับ bucket ถ้าใช้ BigLake)
 export ENV="dev"
-export DOMAIN="the1"
+export DOMAIN="demothe1"
 
 # -------- Service Accounts --------
-export SA_COMPOSER_NAME="sa-composer-orchestrator"
-export SA_DATAFLOW_NAME="sa-dataflow-runner"
+export SA_COMPOSER_NAME="demothe1-sa-composer-orchestrator"
+export SA_DATAFLOW_NAME="demothe1-sa-dataflow-runner"
 
 export SA_COMPOSER="${SA_COMPOSER_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
 export SA_DATAFLOW="${SA_DATAFLOW_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
@@ -40,12 +40,12 @@ export PS_SUB_UPDATE="${PS_TOPIC_UPDATE}-sub"
 
 # -------- Secret Manager --------
 # ชื่อ secrets ที่เก็บ credentials ต่าง ๆ (ตาม Pipeline Details)
-export SEC_AWS_ACCESS_KEY="aws_s3_access_key"
-export SEC_AWS_SECRET_KEY="aws_s3_secret_key"
-export SEC_REDSHIFT_JDBC_URL="redshift_jdbc_url"
-export SEC_REDSHIFT_USER="redshift_user"
-export SEC_REDSHIFT_PASSWORD="redshift_password"
-export SEC_BQ_SVC_JSON="bq_service_json"          # ถ้าจำเป็น
+export SEC_AWS_ACCESS_KEY="demothe1_aws_s3_access_key"
+export SEC_AWS_SECRET_KEY="demothe1_aws_s3_secret_key"
+export SEC_REDSHIFT_JDBC_URL="demothe1_redshift_jdbc_url"
+export SEC_REDSHIFT_USER="demothe1_redshift_user"
+export SEC_REDSHIFT_PASSWORD="demothe1_redshift_password"
+export SEC_BQ_SVC_JSON="demothe1_bq_service_json"          # ถ้าจำเป็น
 # คุณใช้ "internal_sa" / "external_sa" ไว้: สามารถสร้างเพิ่มตรงนี้ได้
 
 # -------- Storage Transfer Service (S3 -> GCS) --------
