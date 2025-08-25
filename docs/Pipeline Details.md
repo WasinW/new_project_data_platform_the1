@@ -16,10 +16,14 @@ STS ใช้ใน
 และ service orchestrate กับ compute นี้มี 
     1. pipeline initiate : composer airflow only ( 
             use get secrete from secret manager (ทั้ง key สำหรับ s3 (STS), redshift , bq table)
+            > get secret STS 
             > trigger STS (ที่สร้าง transfer job ไว้แล้ว ) copy data from s3 to gcs  
+            > get secret BQ 
             > execute bq recreate table temp 
             > execute bq insert to target table
-            > audit data lineage 
+            > get secret dataplex
+            > audit data lineage (dataplex)
+            > get secret BQ/GCS (audit log)
             > audit log 
         ) ใช้ service เหล่านี้บน airflow เลย 
     2. pipeline  realtime  : composer airflow + dataflow ( 
@@ -36,7 +40,9 @@ STS ใช้ใน
                         > and get secret key from secret manager for write data to target (key gcs for table raw , key bq for refined/analytics).
                         > get data from source table in bigtable  
                         > and write data from bigtable to gcs (for raw zone only because table raw zone is external table ) and refined and analytics write in bq (because refined and analytics table are native table)
+                        > get secret dataplex
                         > tracking write lineage on dataplex 
+                        > get secret BQ/GCS (audit log)
                         > audit log
                     > and closed follower by config windowing in job config
                 
@@ -51,6 +57,7 @@ STS ใช้ใน
                     ไรงี้
                         
                     > if exists dependency config
+                        > get secret BQ depend
                         > check dependency from custom check dependency module // เราต้องทำ module แยกมาเอง แล้วมาใส่ในนี้ 
                         > if pass next step if not pass ignore // เว้นไว้ก่อนยังไม่ confirm by pass ไป 
                     > if not have dependency pass to next step  
@@ -88,16 +95,11 @@ STS ใช้ใน
                         > get secret key from secret manager for write data to target (key gcs for table raw , key bq for refined/analytics).
                         > sent message to transformation module // เราต้องทำ module แยกมาเอง แล้วมาใส่ในนี้  
                         > and write message to refined or analytics write in bq 
+                        > get secret dataplex
                         > tracking write lineage on dataplex 
+                        > get secret BQ/GCS (audit log)
                         > audit log
                     > and closed follower by config windowing in job config
-
-                > open windowing for get transformation // ถ้ามี config transformation logic ก็ทำงาน ถ้าไม่มีก็ไม่ต้องทำอะไร  
-                    > if exists transformation config  
-                        > sent message to transformation module // เราต้องทำ module แยกมาเอง แล้วมาใส่ในนี้  
-                        > and write message to refined or analytics write in bq 
-                    > and closed follower by config windowing in job config
-
 
             ) 
     3. pipeline batch : composer airflow + dataflow batch (เป็น dataflow เดียวกันกับ realtime หรือคล้ายกันก็ได้ แต่จะแยกจาก param ที่ส่งไปว่าเป็น batch นะ ไรงี้ )
@@ -111,7 +113,9 @@ STS ใช้ใน
             > and get secret key from secret manager for write data to target (key gcs for table raw , key bq for refined/analytics).
             > get data from source table in bigtable  
             > and write data from bigtable to gcs (for raw zone only because table raw zone is external table ) and refined and analytics write in bq (because refined and analytics table are native table)
+            > get secret dataplex
             > tracking write lineage on dataplex 
+            > get secret BQ/GCS (audit log)
             > audit log
             
             > check dependency // for case dependency สำหรับ zone refined/analytics ที่ต้อง join กับ table อื่นที่ cross domain กันมากกว่า  
@@ -132,11 +136,16 @@ STS ใช้ใน
         ประมาณนี้             
     4. pipeline reconciled : composer airflow +  dataflow 
             use get secrete from secret manager (ทั้ง key สำหรับ s3 (STS), redshift , bq table)
+            > get secret STS
             > trigger STS (ที่สร้าง transfer job ไว้แล้ว ) copy data from s3 to gcs
+            > get secret BQ/DATAPROC/DATAFLOW
             > open service using sql like bq , dataproc , dataflow (maybe dataflow)   
+                > get secret BQ
                 > recreate external table temp for reconciled 
                 > compare data external table temp and real native table 
                 // if using dataproc/dataflow use spark sql 
+                > get secret BQ/GCS (audit log reconciled)
                 > audit reconciled
+            > get secret BQ/GCS (audit log)
             > audit log 
         
