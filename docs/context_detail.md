@@ -639,3 +639,4 @@ bash create_tables.sh
 [13]: https://medium.com/%40inistar/google-cloud-composer-ci-cd-f469a09c9db8?utm_source=chatgpt.com "Google Cloud Composer CI/CD"
 [14]: https://cloud.google.com/bigquery/docs/create-cloud-storage-table-biglake?utm_source=chatgpt.com "Create BigLake external tables for Cloud Storage | BigQuery"
 [15]: https://cloud.google.com/dataplex/docs/about-data-lineage?utm_source=chatgpt.com "About data lineage | Dataplex Universal Catalog"
+
