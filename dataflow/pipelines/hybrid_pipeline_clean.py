@@ -248,7 +248,7 @@ def run_hybrid_pipeline(argv=None):
     
     # Set up pipeline options
     pipeline_options = PipelineOptions(pipeline_args)
-    hybrid_options = pipeline_options.view_as(HybridPipelineOptions) #add param 
+    hybrid_options = pipeline_options.view_as(HybridPipelineOptions)
     
     # Load configuration
     config_loader = ConfigLoader(hybrid_options.config_path)
